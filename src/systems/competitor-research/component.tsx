@@ -62,7 +62,7 @@ export default function CompetitorResearchSystem({ brandId }: { brandId: string 
   const [sources, setSources] = useState<Source[]>([]);
   const [selected, setSelected] = useState<Ad | null>(null);
 
-  const [mode, setMode] = useState<"page_id" | "keyword">("page_id");
+  const [mode, setMode] = useState<"url" | "page_id" | "keyword">("url");
   const [query, setQuery] = useState("");
   const [country, setCountry] = useState("ALL");
   const [count, setCount] = useState(20);
@@ -103,7 +103,7 @@ export default function CompetitorResearchSystem({ brandId }: { brandId: string 
     return () => clearInterval(iv);
   }, [activeJob, brandId, load]);
 
-  const runScrape = async (override?: { mode: "page_id" | "keyword"; query: string }) => {
+  const runScrape = async (override?: { mode: "url" | "page_id" | "keyword"; query: string }) => {
     const m = override?.mode ?? mode;
     const q = (override?.query ?? query).trim();
     if (!q) return;
@@ -148,7 +148,7 @@ export default function CompetitorResearchSystem({ brandId }: { brandId: string 
           <BentoCard className="p-5">
             <div className="flex flex-wrap items-end gap-3">
               <div className="flex rounded-full border border-border/70 bg-muted/60 p-1">
-                {(["page_id", "keyword"] as const).map((m) => (
+                {(["url", "page_id", "keyword"] as const).map((m) => (
                   <button
                     key={m}
                     onClick={() => setMode(m)}
@@ -157,18 +157,25 @@ export default function CompetitorResearchSystem({ brandId }: { brandId: string 
                       mode === m ? "bg-card text-foreground shadow-[var(--shadow-xs)]" : "text-muted-foreground"
                     )}
                   >
-                    {m === "page_id" ? "Page ID" : "Keyword"}
+                    {m === "url" ? "Ad Library URL" : m === "page_id" ? "Page ID" : "Keyword"}
                   </button>
                 ))}
               </div>
-              <div className="min-w-[220px] flex-1 space-y-1.5">
-                <Label>{mode === "page_id" ? "Facebook Page ID" : "Keyword"}</Label>
-                <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={mode === "page_id" ? "e.g. 104958162563witty" : "e.g. collagen serum"} onKeyDown={(e) => e.key === "Enter" && runScrape()} />
+              <div className="min-w-[240px] flex-1 space-y-1.5">
+                <Label>{mode === "url" ? "Meta Ad Library URL" : mode === "page_id" ? "Facebook Page ID" : "Keyword"}</Label>
+                <Input
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder={mode === "url" ? "Paste facebook.com/ads/library/?…" : mode === "page_id" ? "e.g. 104958162563" : "e.g. collagen peptides"}
+                  onKeyDown={(e) => e.key === "Enter" && runScrape()}
+                />
               </div>
-              <div className="w-24 space-y-1.5">
-                <Label>Country</Label>
-                <Input value={country} onChange={(e) => setCountry(e.target.value)} placeholder="ALL" />
-              </div>
+              {mode !== "url" && (
+                <div className="w-24 space-y-1.5">
+                  <Label>Country</Label>
+                  <Input value={country} onChange={(e) => setCountry(e.target.value)} placeholder="ALL" />
+                </div>
+              )}
               <div className="w-20 space-y-1.5">
                 <Label>Count</Label>
                 <Input type="number" value={count} min={1} max={50} onChange={(e) => setCount(Number(e.target.value))} />
@@ -177,6 +184,15 @@ export default function CompetitorResearchSystem({ brandId }: { brandId: string 
                 {running ? <Loader2 className="size-4 animate-spin" /> : <Play className="size-4" />} Run scrape
               </Button>
             </div>
+            {mode === "url" && (
+              <p className="mt-3 text-xs text-muted-foreground">
+                Open{" "}
+                <a className="underline hover:text-foreground" href="https://www.facebook.com/ads/library/" target="_blank" rel="noreferrer">
+                  facebook.com/ads/library
+                </a>
+                , search the competitor (or open one of their ads), then copy the address-bar URL and paste it here.
+              </p>
+            )}
             {activeJob && (
               <p className="mt-3 flex items-center gap-2 text-sm text-muted-foreground">
                 <Loader2 className="size-3.5 animate-spin" />

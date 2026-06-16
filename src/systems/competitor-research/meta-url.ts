@@ -1,13 +1,29 @@
-// Build a Facebook Ad Library URL the Apify actor scrapes — page-id or keyword mode.
-// Mirrors the n8n "Create Ad Library URL" node 1:1.
+// Resolve the Facebook Ad Library URL the Apify actor scrapes.
+// Three inputs: paste a full Ad Library URL (most reliable), a Page ID, or a keyword.
 
-export type ScrapeMode = "page_id" | "keyword";
+export type ScrapeMode = "url" | "page_id" | "keyword";
 
-export function buildMetaAdLibraryUrl(opts: {
-  mode: ScrapeMode;
-  query: string; // page id OR keyword
-  country?: string; // e.g. "US", "ALL"
-}): string {
+export const META_ADS_ACTOR_ID = "XtaWFhbtfxyzqrFmd"; // curious_coder / Facebook Ads Library Scraper
+
+/** True if the string is a valid Meta Ad Library URL. */
+export function isAdLibraryUrl(value: string): boolean {
+  try {
+    const u = new URL(value.trim());
+    return (
+      u.protocol === "https:" &&
+      /(^|\.)facebook\.com$/.test(u.hostname) &&
+      u.pathname.includes("/ads/library")
+    );
+  } catch {
+    return false;
+  }
+}
+
+/** Build the scrape URL from whichever input mode the user chose. */
+export function resolveScrapeUrl(opts: { mode: ScrapeMode; query: string; country?: string }): string {
+  const query = opts.query.trim();
+  if (opts.mode === "url") return query; // paste-through (validate with isAdLibraryUrl first)
+
   const country = opts.country || "ALL";
   const base = "https://www.facebook.com/ads/library/";
   const common =
@@ -16,9 +32,7 @@ export function buildMetaAdLibraryUrl(opts: {
     `&sort_data[direction]=desc&sort_data[mode]=total_impressions`;
 
   if (opts.mode === "page_id") {
-    return `${base}?${common}&search_type=page&view_all_page_id=${encodeURIComponent(opts.query)}`;
+    return `${base}?${common}&search_type=page&view_all_page_id=${encodeURIComponent(query)}`;
   }
-  return `${base}?${common}&q=${encodeURIComponent(opts.query)}&search_type=keyword_unordered`;
+  return `${base}?${common}&q=${encodeURIComponent(query)}&search_type=keyword_unordered`;
 }
-
-export const META_ADS_ACTOR_ID = "XtaWFhbtfxyzqrFmd"; // curious_coder / Facebook Ads Library Scraper
