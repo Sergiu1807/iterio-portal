@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { Suspense } from "react";
 import { useParams } from "next/navigation";
 import { PackageX } from "lucide-react";
 import { getSystem } from "@/systems/registry";
@@ -33,7 +34,11 @@ export default function SystemPage() {
   // When a system flips to "live", its Component mounts here — no shell changes.
   if (system.status === "live" && system.Component && currentBrandId) {
     const Live = system.Component;
-    return <Live brandId={currentBrandId} />;
+    return (
+      <Suspense fallback={<div className="h-64 animate-pulse rounded-[var(--radius)] bg-muted/50" />}>
+        <Live brandId={currentBrandId} />
+      </Suspense>
+    );
   }
 
   return <PlaceholderState system={system} />;

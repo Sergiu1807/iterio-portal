@@ -1,0 +1,7 @@
+{
+  "crons": [
+    { "path": "/api/cron/poll-runs", "schedule": "* * * * *" },
+    { "path": "/api/cron/analyze", "schedule": "*/2 * * * *" },
+    { "path": "/api/cron/sweep-stuck-jobs", "schedule": "*/15 * * * *" }
+  ]
+}

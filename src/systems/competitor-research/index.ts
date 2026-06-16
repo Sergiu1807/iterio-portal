@@ -1,27 +1,29 @@
 import { Radar } from "lucide-react";
+import { lazy } from "react";
 import type { SystemDefinition } from "../types";
 
 export const competitorResearch: SystemDefinition = {
   key: "competitor-research",
   name: "Competitor Research",
   icon: Radar,
-  tagline: "Scrape and analyse competitor ads, organic and angles.",
+  tagline: "Scrape and analyse competitor Meta ads — code-native.",
   description:
-    "Track competitors across Meta, TikTok and Instagram — scraping their ads and organic content, scoring longevity, and surfacing the angles working in this brand's category. Feeds research-grounded briefs.",
+    "Track competitors on Meta — scraping their live ads, owning the media, scoring duplicates, and breaking each ad down with AI into reusable strategic insight. Runs entirely in code (Apify + Gemini + Claude), no n8n.",
   capabilities: [
-    "Meta / TikTok / Instagram scrapers",
-    "Ad longevity scoring + copy breakdown",
-    "AI angle & creative analysis",
-    "Research-grounded brief handoff",
+    "Meta Ad Library scraper (page-id or keyword)",
+    "Media saved to your own storage",
+    "Per-ad AI breakdown (angle, hooks, persona, proof)",
+    "Dedup across runs",
   ],
-  status: "placeholder",
+  status: "live",
   nav: { group: "research", order: 10 },
   infra: [
-    { kind: "n8n", workflowKey: "competitor_research", label: "n8n workflow" },
-    { kind: "service", keyName: "APIFY_TOKEN", label: "Apify (scrapers)" },
+    { kind: "service", keyName: "APIFY_TOKEN", label: "Apify (scraper)" },
+    { kind: "apiKey", keyName: "GEMINI_API_KEY", label: "Google Gemini (vision)" },
     { kind: "apiKey", keyName: "ANTHROPIC_API_KEY", label: "Anthropic Claude" },
   ],
   perBrand: true,
   enabledByDefault: false,
   accent: "#B58A3C",
+  Component: lazy(() => import("./component")),
 };
