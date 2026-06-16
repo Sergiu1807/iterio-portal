@@ -1,9 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { Loader2, AlertTriangle, Maximize2, Download } from "lucide-react";
+import { toast } from "sonner";
+import { Loader2, AlertTriangle, Maximize2, Download, Package, Stamp, BookmarkPlus, Pencil } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import type { Generation } from "./ui-types";
 import { aspectClass, modeLabel, statusLabel } from "./ui-utils";
@@ -98,5 +100,67 @@ export function GenTile({
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+/** Per-tile manual actions: refine product / refine logo / edit copy / save to library. */
+export function GenActions({
+  brandId,
+  gen,
+  canRefineProduct,
+  canRefineLogo,
+  onDone,
+  onEdit,
+}: {
+  brandId: string;
+  gen: Generation;
+  canRefineProduct: boolean;
+  canRefineLogo: boolean;
+  onDone: () => void;
+  onEdit?: (gen: Generation) => void;
+}) {
+  const [busy, setBusy] = useState<string | null>(null);
+
+  const post = async (kind: string, url: string, body: Record<string, unknown>, ok: string) => {
+    setBusy(kind);
+    const r = await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+    setBusy(null);
+    if (r.ok) {
+      toast.success(ok);
+      onDone();
+    } else {
+      toast.error(((await r.json().catch(() => ({}))) as { error?: string })?.error ?? "Action failed");
+    }
+  };
+
+  const refine = (kind: "product" | "logo") =>
+    post(kind, `/api/systems/static-generation/refine`, { brandId, generationId: gen.id, kind }, kind === "product" ? "Refining product…" : "Refining logo…");
+  const save = () => post("save", `/api/systems/static-generation/save-reference`, { brandId, generationId: gen.id }, "Saved to library");
+
+  return (
+    <>
+      {canRefineProduct && <IconAction label="Refine product" busy={busy === "product"} onClick={() => refine("product")} icon={<Package className="size-3.5" />} />}
+      {canRefineLogo && <IconAction label="Refine logo" busy={busy === "logo"} onClick={() => refine("logo")} icon={<Stamp className="size-3.5" />} />}
+      {onEdit && <IconAction label="Edit copy" busy={false} onClick={() => onEdit(gen)} icon={<Pencil className="size-3.5" />} />}
+      <IconAction label="Save to library" busy={busy === "save"} onClick={save} icon={<BookmarkPlus className="size-3.5" />} />
+    </>
+  );
+}
+
+function IconAction({ label, busy, onClick, icon }: { label: string; busy: boolean; onClick: () => void; icon: React.ReactNode }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          onClick={onClick}
+          disabled={busy}
+          aria-label={label}
+          className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
+        >
+          {busy ? <Loader2 className="size-3.5 animate-spin" /> : icon}
+        </button>
+      </TooltipTrigger>
+      <TooltipContent>{label}</TooltipContent>
+    </Tooltip>
   );
 }

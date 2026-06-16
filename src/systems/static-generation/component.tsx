@@ -13,6 +13,8 @@ import { useBrand } from "@/lib/brand-store";
 import { cn } from "@/lib/utils";
 import { CreateTab } from "./create-tab";
 import { GalleryTab } from "./gallery-tab";
+import { LibraryTab } from "./library-tab";
+import { GenActions } from "./result-tile";
 import { isActive } from "./ui-utils";
 import type { Generation } from "./ui-types";
 
@@ -137,6 +139,13 @@ function StaticWorkspace({
 
   const activeCount = useMemo(() => generations.filter(isActive).length, [generations]);
 
+  const renderActions = useCallback(
+    (gen: Generation) => (
+      <GenActions brandId={brandId} gen={gen} canRefineProduct={!!gen.productId} canRefineLogo={config.hasLogo} onDone={loadGenerations} />
+    ),
+    [brandId, config.hasLogo, loadGenerations]
+  );
+
   // Drive in-flight generations forward (cron is the prod backstop).
   useEffect(() => {
     if (activeCount === 0) return;
@@ -186,17 +195,21 @@ function StaticWorkspace({
       )}
 
       <Tabs defaultValue="create">
-        <TabsList>
+        <TabsList className="flex-wrap">
           <TabsTrigger value="create">Create</TabsTrigger>
           <TabsTrigger value="gallery">Gallery ({generations.length})</TabsTrigger>
+          <TabsTrigger value="library">Library</TabsTrigger>
           <TabsTrigger value="settings">Settings</TabsTrigger>
         </TabsList>
 
         <TabsContent value="create">
-          <CreateTab brandId={brandId} generations={generations} reload={loadGenerations} />
+          <CreateTab brandId={brandId} generations={generations} reload={loadGenerations} renderActions={renderActions} />
         </TabsContent>
         <TabsContent value="gallery">
-          <GalleryTab generations={generations} reload={loadGenerations} />
+          <GalleryTab generations={generations} reload={loadGenerations} renderActions={renderActions} />
+        </TabsContent>
+        <TabsContent value="library">
+          <LibraryTab brandId={brandId} />
         </TabsContent>
         <TabsContent value="settings">
           <SettingsPanel brandId={brandId} config={config} reload={reloadConfig} onRebuild={onRebuild} rebuilding={rebuilding} />
