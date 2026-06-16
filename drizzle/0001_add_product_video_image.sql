@@ -1,0 +1,1 @@
+ALTER TABLE "products" ADD COLUMN "video_image_url" text;

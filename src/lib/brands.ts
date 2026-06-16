@@ -39,7 +39,7 @@ function mapBrand(
     sections: subs.sections
       .sort((a, b) => a.sortOrder - b.sortOrder)
       .map((s) => ({ id: s.id, title: s.title, sectionType: s.sectionType ?? "custom", content: s.content ?? "", sortOrder: s.sortOrder })),
-    products: subs.products.map((p) => ({ id: p.id, name: p.name, category: p.category ?? undefined, keyBenefits: p.keyBenefits ?? undefined, price: p.price ?? undefined, productUrl: p.productUrl ?? undefined, isHero: p.isHero })),
+    products: subs.products.map((p) => ({ id: p.id, name: p.name, category: p.category ?? undefined, keyBenefits: p.keyBenefits ?? undefined, price: p.price ?? undefined, productUrl: p.productUrl ?? undefined, imageUrl: p.imageUrl ?? undefined, videoImageUrl: p.videoImageUrl ?? undefined, isHero: p.isHero })),
     personas: subs.personas.map((p) => ({ id: p.id, name: p.name, demographics: p.demographics ?? undefined, psychographics: p.psychographics ?? undefined, painPoints: p.painPoints ?? undefined, desires: p.desires ?? undefined })),
     usps: subs.usps.map((u) => ({ id: u.id, text: u.text, category: u.category ?? undefined, isPrimary: u.isPrimary })),
     competitors: subs.competitors.map((c) => ({ id: c.id, name: c.name, websiteUrl: c.websiteUrl ?? undefined, instagramHandle: c.instagramHandle ?? undefined, tiktokHandle: c.tiktokHandle ?? undefined, type: c.type ?? undefined })),

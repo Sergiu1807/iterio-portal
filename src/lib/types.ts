@@ -26,6 +26,8 @@ export interface Product {
   keyBenefits?: string;
   price?: string;
   productUrl?: string;
+  imageUrl?: string; // 1:1 — Static Generation
+  videoImageUrl?: string; // 9:16 — Video Generation
   isHero?: boolean;
 }
 

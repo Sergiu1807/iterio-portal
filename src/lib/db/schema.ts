@@ -85,7 +85,8 @@ export const products = pgTable(
     keyBenefits: text("key_benefits"),
     price: text("price"),
     productUrl: text("product_url"),
-    imageUrl: text("image_url"),
+    imageUrl: text("image_url"), // 1:1 — Static Generation
+    videoImageUrl: text("video_image_url"), // 9:16 — Video Generation
     isHero: boolean("is_hero").notNull().default(false),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
