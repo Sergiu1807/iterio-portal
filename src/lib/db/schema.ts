@@ -285,3 +285,74 @@ export const competitorAds = pgTable(
     index("competitor_ads_analysis_status_idx").on(t.aiAnalysisStatus),
   ]
 );
+
+// =============================================
+// STATIC AD GENERATION
+// Per-brand agent prompts + generated images + a per-brand reference library.
+// =============================================
+
+// One row per brand: the two-agent system prompts + brand logo, authored by the
+// "Set up Static system" prompt builder. Placeholder prompts work out of the box.
+export const staticAdConfig = pgTable("static_ad_config", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  brandId: uuid("brand_id").notNull().unique().references(() => brands.id, { onDelete: "cascade" }),
+  agent1Prompt: text("agent1_prompt").notNull(), // vision: reference ad → structured JSON
+  agent2Prompt: text("agent2_prompt").notNull(), // composer: brief + product + voice → image prompt
+  briefAgent1Prompt: text("brief_agent1_prompt"), // brief-mode analyzer (optional)
+  briefAgent2Prompt: text("brief_agent2_prompt"), // brief-mode composer (optional)
+  brandLogoPath: text("brand_logo_path"), // Supabase path; gates "Refine logo"
+  status: text("status").notNull().default("placeholder"), // placeholder | building | ready | error
+  isPlaceholder: boolean("is_placeholder").notNull().default(true),
+  buildError: text("build_error"),
+  builtAt: timestamp("built_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// One row per generated image (incl. refine/edit derivatives).
+export const staticAdGenerations = pgTable(
+  "static_ad_generations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    brandId: uuid("brand_id").notNull().references(() => brands.id, { onDelete: "cascade" }),
+    productId: uuid("product_id").references(() => products.id, { onDelete: "set null" }),
+    mode: text("mode").notNull().default("custom"), // custom | brief | refined | edited
+    status: text("status").notNull().default("pending"), // pending | generating | completed | error
+    kieModel: text("kie_model"), // nano-banana-2 | gpt-image-2-image-to-image
+    kieJobId: text("kie_job_id"),
+    aspectRatio: text("aspect_ratio").notNull().default("1:1"),
+    resolution: text("resolution").notNull().default("2K"),
+    outputFormat: text("output_format").notNull().default("png"),
+    finalPrompt: text("final_prompt"), // Agent 2 output (Nano Banana prompt)
+    analysisJson: text("analysis_json"), // Agent 1 output
+    referencePath: text("reference_path"), // reference image used (Supabase path)
+    adCopy: text("ad_copy"),
+    imagePath: text("image_path"), // final stored image (Supabase path)
+    batchId: uuid("batch_id"),
+    batchIndex: integer("batch_index").notNull().default(1),
+    batchSize: integer("batch_size").notNull().default(1),
+    sourceGenerationId: uuid("source_generation_id"), // parent for refined/edited rows
+    attempts: integer("attempts").notNull().default(0),
+    errorMessage: text("error_message"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("static_gen_brand_status_idx").on(t.brandId, t.status),
+    index("static_gen_batch_idx").on(t.batchId),
+  ]
+);
+
+// Per-brand reference-image library (replaces the global inspiration library).
+export const staticReferences = pgTable(
+  "static_references",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    brandId: uuid("brand_id").notNull().references(() => brands.id, { onDelete: "cascade" }),
+    name: text("name"),
+    imagePath: text("image_path").notNull(), // Supabase path
+    tags: text("tags"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("static_ref_brand_idx").on(t.brandId)]
+);

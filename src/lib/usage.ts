@@ -20,7 +20,19 @@ export function computeTokenCost(model: string, inputTokens: number, outputToken
   return (inputTokens / 1_000_000) * p.input + (outputTokens / 1_000_000) * p.output;
 }
 
-export type UsageProvider = "anthropic" | "gemini" | "apify";
+// Per-image price estimates (USD) for Kie AI image models. Kie bills separately;
+// these are best-effort estimates so Admin → Usage reflects image spend.
+const IMAGE_PRICE: Record<string, Record<string, number>> = {
+  "nano-banana-2": { "1K": 0.015, "2K": 0.02, "4K": 0.04 },
+  "gpt-image-2-image-to-image": { "1K": 0.03, "2K": 0.05, "4K": 0.08 },
+};
+
+export function computeImageCost(model: string, resolution = "2K"): number {
+  const m = IMAGE_PRICE[model];
+  return m?.[resolution] ?? m?.["2K"] ?? 0.02;
+}
+
+export type UsageProvider = "anthropic" | "gemini" | "apify" | "kie";
 
 export type UsageEvent = {
   provider: UsageProvider;

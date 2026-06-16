@@ -29,6 +29,13 @@
       "when": 1781628373227,
       "tag": "0003_media_capture_flags",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1781645052037,
+      "tag": "0004_static_ad_system",
+      "breakpoints": true
     }
   ]
 }

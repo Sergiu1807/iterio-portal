@@ -174,3 +174,67 @@ export function extFromContentType(ct: string): string {
   if (ct.includes("gif")) return "gif";
   return "jpg";
 }
+
+/** Image bytes from our bucket as base64 + mime — for building Claude vision blocks. */
+export async function imageBase64FromPath(path: string): Promise<{ base64: string; mediaType: string }> {
+  const buf = await downloadFromStorage(path);
+  const p = path.toLowerCase().split("?")[0];
+  let mediaType = "image/jpeg";
+  if (p.endsWith(".png")) mediaType = "image/png";
+  else if (p.endsWith(".webp")) mediaType = "image/webp";
+  else if (p.endsWith(".gif")) mediaType = "image/gif";
+  return { base64: buf.toString("base64"), mediaType };
+}
+
+/** Fetch a brand website and return readable text (SSRF-guarded, https-only, capped).
+ *  Used by the Static Ad prompt builder to research brand voice/visual direction. */
+export async function fetchWebsiteText(
+  rawUrl: string,
+  opts?: { maxChars?: number; timeoutMs?: number }
+): Promise<string | null> {
+  let u: URL;
+  try {
+    u = new URL(/^https?:\/\//i.test(rawUrl) ? rawUrl : `https://${rawUrl}`);
+  } catch {
+    return null;
+  }
+  if (u.protocol !== "https:") return null;
+  if (!(await assertPublicHost(u.hostname))) return null;
+
+  let res: Response;
+  try {
+    res = await fetch(u.toString(), {
+      signal: AbortSignal.timeout(opts?.timeoutMs ?? 15_000),
+      redirect: "follow",
+      headers: { "user-agent": "Mozilla/5.0 (compatible; IterioBot/1.0)" },
+    });
+  } catch {
+    return null;
+  }
+  if (!res.ok) return null;
+  try {
+    const finalHost = new URL(res.url).hostname;
+    if (finalHost !== u.hostname && !(await assertPublicHost(finalHost))) return null;
+  } catch {
+    return null;
+  }
+  const ct = res.headers.get("content-type") || "";
+  if (!/text\/html|application\/xhtml/.test(ct) && ct !== "") return null;
+
+  const html = (await res.text()).slice(0, 600_000);
+  const text = html
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<noscript[\s\S]*?<\/noscript>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&#39;|&apos;/gi, "'")
+    .replace(/&quot;/gi, '"')
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!text) return null;
+  return text.slice(0, opts?.maxChars ?? 12_000);
+}

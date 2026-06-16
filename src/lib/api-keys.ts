@@ -83,4 +83,5 @@ export const CONFIGURABLE_KEYS = [
   { keyName: "ANTHROPIC_API_KEY", label: "Anthropic Claude", description: "Creative analysis, brief & copy generation across systems." },
   { keyName: "GEMINI_API_KEY", label: "Google Gemini", description: "Vision analysis of competitor video/image creatives." },
   { keyName: "APIFY_TOKEN", label: "Apify", description: "Meta / TikTok / Instagram scrapers for Competitor Research." },
+  { keyName: "KIE_AI_API_KEY", label: "Kie AI (image generation)", description: "Nano Banana 2 + GPT Image 2 for the Static Ad system." },
 ] as const;
