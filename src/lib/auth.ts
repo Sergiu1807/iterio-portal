@@ -62,10 +62,25 @@ export async function requireAuth(): Promise<AuthResult | NextResponse> {
     return NextResponse.json({ error: "Access denied" }, { status: 403 });
   }
 
+  profile = await ensureAdminRole(user.id, user.email, profile);
+
   return {
     user: { id: user.id, email: user.email ?? undefined },
     profile: profile as Profile,
   };
+}
+
+/** ADMIN_EMAILS is the source of truth: upgrade an allow-listed user to admin. */
+async function ensureAdminRole<T extends { role: string }>(
+  userId: string,
+  email: string | undefined,
+  profile: T
+): Promise<T> {
+  if (profile.role !== "admin" && adminEmails().includes((email || "").toLowerCase())) {
+    await db.update(schema.profiles).set({ role: "admin" }).where(eq(schema.profiles.id, userId));
+    return { ...profile, role: "admin" };
+  }
+  return profile;
 }
 
 export async function requireAdmin(): Promise<AuthResult | NextResponse> {
@@ -110,5 +125,6 @@ export async function getCurrentProfile(): Promise<Profile | null> {
       .limit(1);
   }
 
-  return profile && profile.isActive ? (profile as Profile) : null;
+  if (!profile || !profile.isActive) return null;
+  return (await ensureAdminRole(user.id, user.email ?? undefined, profile)) as Profile;
 }

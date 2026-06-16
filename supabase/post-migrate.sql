@@ -22,12 +22,9 @@ security definer
 set search_path = public
 as $$
 begin
+  -- role defaults to 'member'; the app upgrades ADMIN_EMAILS users to admin on login.
   insert into public.profiles (id, email, role)
-  values (
-    new.id,
-    new.email,
-    case when lower(new.email) = 'stephen@studio-flow.co' then 'admin' else 'member' end
-  )
+  values (new.id, new.email, 'member')
   on conflict (id) do nothing;
   return new;
 end;
