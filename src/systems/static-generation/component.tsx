@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Loader2, Sparkles, Upload, Trash2, ChevronDown, RefreshCw, AlertTriangle, CheckCircle2 } from "lucide-react";
 import { PageHeader } from "@/components/shared/page-header";
@@ -8,8 +8,13 @@ import { BentoCard } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Textarea, Label } from "@/components/ui/input";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { useBrand } from "@/lib/brand-store";
 import { cn } from "@/lib/utils";
+import { CreateTab } from "./create-tab";
+import { GalleryTab } from "./gallery-tab";
+import { isActive } from "./ui-utils";
+import type { Generation } from "./ui-types";
 
 type Config = {
   status: string; // placeholder | building | ready | error
@@ -93,30 +98,110 @@ export default function StaticGenerationSystem({ brandId }: { brandId: string })
 
   // ── Workspace (ready | placeholder | error) ─────────────────────────────
   return (
+    <StaticWorkspace
+      brandId={brandId}
+      brandName={currentBrand?.name}
+      config={config}
+      reloadConfig={loadConfig}
+      onRebuild={runSetup}
+      rebuilding={busy}
+    />
+  );
+}
+
+function StaticWorkspace({
+  brandId,
+  brandName,
+  config,
+  reloadConfig,
+  onRebuild,
+  rebuilding,
+}: {
+  brandId: string;
+  brandName?: string;
+  config: NonNullable<Config>;
+  reloadConfig: () => void;
+  onRebuild: () => void;
+  rebuilding: boolean;
+}) {
+  const [generations, setGenerations] = useState<Generation[]>([]);
+
+  const loadGenerations = useCallback(async () => {
+    const r = await fetch(`/api/systems/static-generation/generations?brandId=${brandId}`);
+    if (r.ok) setGenerations(((await r.json()) as { generations: Generation[] }).generations);
+  }, [brandId]);
+
+  useEffect(() => {
+    loadGenerations();
+  }, [loadGenerations]);
+
+  const activeCount = useMemo(() => generations.filter(isActive).length, [generations]);
+
+  // Drive in-flight generations forward (cron is the prod backstop).
+  useEffect(() => {
+    if (activeCount === 0) return;
+    let cancelled = false;
+    const pump = async () => {
+      await fetch(`/api/systems/static-generation/tick`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ brandId }),
+      }).catch(() => {});
+      if (!cancelled) await loadGenerations();
+    };
+    pump();
+    const iv = setInterval(pump, 4000);
+    return () => {
+      cancelled = true;
+      clearInterval(iv);
+    };
+  }, [activeCount, brandId, loadGenerations]);
+
+  return (
     <div className="space-y-7">
       <PageHeader
         eyebrow="Create"
         title="Static Ad Generation"
-        description={`On-brand static ads for ${currentBrand?.name ?? "this brand"} — two agents, image generation, manual refine.`}
-        actions={<StatusBadge config={config} />}
+        description={`On-brand static ads for ${brandName ?? "this brand"} — two agents, image generation, manual refine.`}
+        actions={
+          activeCount > 0 ? (
+            <Badge variant="warning" className="gap-1.5">
+              <Loader2 className="size-3 animate-spin" /> {activeCount} generating
+            </Badge>
+          ) : (
+            <StatusBadge config={config} />
+          )
+        }
       />
 
       {config.isPlaceholder && config.status !== "error" && (
         <Banner tone="warning" icon={<AlertTriangle className="size-4" />}>
-          Using starter prompts. Click <strong>Rebuild prompts</strong> to research this brand and author tailored agents.
+          Using starter prompts. Open <strong>Settings → Rebuild prompts</strong> to research this brand and author tailored agents.
         </Banner>
       )}
       {config.status === "error" && (
         <Banner tone="error" icon={<AlertTriangle className="size-4" />}>
-          Prompt build failed{config.buildError ? `: ${config.buildError}` : ""}. Starter prompts are active — you can still generate, or retry.
+          Prompt build failed{config.buildError ? `: ${config.buildError}` : ""}. Starter prompts are active — you can still generate, or retry from Settings.
         </Banner>
       )}
 
-      <SettingsPanel brandId={brandId} config={config} reload={loadConfig} onRebuild={runSetup} rebuilding={busy} />
+      <Tabs defaultValue="create">
+        <TabsList>
+          <TabsTrigger value="create">Create</TabsTrigger>
+          <TabsTrigger value="gallery">Gallery ({generations.length})</TabsTrigger>
+          <TabsTrigger value="settings">Settings</TabsTrigger>
+        </TabsList>
 
-      <BentoCard className="p-6 text-sm text-muted-foreground">
-        Generation, refine, library and editing tabs land next. The brand’s agents and logo are configured above.
-      </BentoCard>
+        <TabsContent value="create">
+          <CreateTab brandId={brandId} generations={generations} reload={loadGenerations} />
+        </TabsContent>
+        <TabsContent value="gallery">
+          <GalleryTab generations={generations} reload={loadGenerations} />
+        </TabsContent>
+        <TabsContent value="settings">
+          <SettingsPanel brandId={brandId} config={config} reload={reloadConfig} onRebuild={onRebuild} rebuilding={rebuilding} />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
