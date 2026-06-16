@@ -5,7 +5,7 @@ import { imageBase64FromPath } from "@/lib/storage";
 import { SYSTEM_KEY } from "./constants";
 
 /** Build a Claude vision block from an image stored in our bucket. */
-async function imageBlock(path: string): Promise<Anthropic.ImageBlockParam> {
+export async function imageBlock(path: string): Promise<Anthropic.ImageBlockParam> {
   const { base64, mediaType } = await imageBase64FromPath(path);
   return { type: "image", source: { type: "base64", media_type: mediaType as Anthropic.Base64ImageSource["media_type"], data: base64 } };
 }
