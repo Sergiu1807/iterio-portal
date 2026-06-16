@@ -22,6 +22,13 @@
       "when": 1781621086666,
       "tag": "0002_competitor_media_fields",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1781628373227,
+      "tag": "0003_media_capture_flags",
+      "breakpoints": true
     }
   ]
 }

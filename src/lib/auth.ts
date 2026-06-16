@@ -46,7 +46,7 @@ export async function requireAuth(): Promise<AuthResult | NextResponse> {
 
   if (!profile) {
     const email = (user.email || "").toLowerCase();
-    const role: Role = adminEmails().includes(email) ? "admin" : "member";
+    const role: Role = adminEmails().includes(email) ? "admin" : "viewer";
     await db
       .insert(schema.profiles)
       .values({ id: user.id, email: user.email ?? null, role })
@@ -113,7 +113,7 @@ export async function getCurrentProfile(): Promise<Profile | null> {
 
   if (!profile) {
     const email = (user.email || "").toLowerCase();
-    const role: Role = adminEmails().includes(email) ? "admin" : "member";
+    const role: Role = adminEmails().includes(email) ? "admin" : "viewer";
     await db
       .insert(schema.profiles)
       .values({ id: user.id, email: user.email ?? null, role })

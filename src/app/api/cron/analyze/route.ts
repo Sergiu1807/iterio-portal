@@ -8,6 +8,6 @@ export const maxDuration = 60;
 export async function GET(req: Request) {
   const denied = assertCron(req);
   if (denied) return denied;
-  const analyzed = await analyzeQueued(6);
+  const analyzed = await analyzeQueued({ limit: 6 });
   return NextResponse.json({ analyzed });
 }

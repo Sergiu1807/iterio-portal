@@ -22,7 +22,9 @@ export type CallClaudeParams = {
 export async function callClaude(params: CallClaudeParams): Promise<Anthropic.Message> {
   const apiKey = await getApiKey("ANTHROPIC_API_KEY");
   if (!apiKey) throw new Error("ANTHROPIC_API_KEY is not configured");
-  const client = new Anthropic({ apiKey });
+  // Extra retries/timeout headroom so transient blips are absorbed by the SDK's
+  // exponential backoff before they ever count against the pipeline's attempt budget.
+  const client = new Anthropic({ apiKey, maxRetries: 4, timeout: 60_000 });
   const model = params.model ?? DEFAULT_CLAUDE_MODEL;
 
   const resp = await client.messages.create({

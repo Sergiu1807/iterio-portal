@@ -54,15 +54,21 @@ export default function CompetitorResearchSystem({ brandId }: { brandId: string 
   // Drive the pipeline forward while a job is active (cron is the prod backstop).
   useEffect(() => {
     if (!activeJob) return;
-    const iv = setInterval(async () => {
+    let cancelled = false;
+    const pump = async () => {
       await fetch(`/api/systems/competitor-research/tick`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ brandId }),
       }).catch(() => {});
-      await load();
-    }, 4000);
-    return () => clearInterval(iv);
+      if (!cancelled) await load();
+    };
+    pump(); // leading call — no 4s dead window on first activation
+    const iv = setInterval(pump, 4000);
+    return () => {
+      cancelled = true;
+      clearInterval(iv);
+    };
   }, [activeJob, brandId, load]);
 
   const runScrape = useCallback(
@@ -123,7 +129,7 @@ export default function CompetitorResearchSystem({ brandId }: { brandId: string 
         </TabsContent>
       </Tabs>
 
-      <AdDetailModal ad={selected} onClose={() => setSelected(null)} />
+      <AdDetailModal key={selected?.id ?? "none"} ad={selected} onClose={() => setSelected(null)} />
     </div>
   );
 }

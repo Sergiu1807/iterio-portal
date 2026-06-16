@@ -248,6 +248,10 @@ export const competitorAds = pgTable(
     mediaCards: jsonb("media_cards").$type<string[]>().notNull().default([]), // carousel image paths
     fullMediaAsset: text("full_media_asset"),
     platformsDisplay: text("platforms_display"),
+    // media capture diagnostics + backfill
+    mediaCaptureFailed: boolean("media_capture_failed").notNull().default(false),
+    mediaCaptureAttempts: integer("media_capture_attempts").notNull().default(0),
+    sourceMediaUrls: jsonb("source_media_urls").$type<{ thumbnailUrl?: string; videoUrl?: string; carouselImageUrls?: string[] }>(),
     // ad copy
     displayPrimaryText: text("display_primary_text"),
     headlineTitle: text("headline_title"),

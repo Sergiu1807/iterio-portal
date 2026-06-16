@@ -16,6 +16,7 @@ export type Ad = {
   platformsDisplay: string | null;
   dedupCount: number;
   isDco: boolean;
+  mediaCaptureFailed: boolean;
   metaSortRank: number | null;
   snapshotDate: string | null;
   adStartDate: string | null;

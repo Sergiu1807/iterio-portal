@@ -13,6 +13,9 @@ export const maxDuration = 60;
 export async function POST(req: Request) {
   const auth = await requireAuth();
   if (isAuthError(auth)) return auth;
+  if (auth.profile.role === "viewer") {
+    return NextResponse.json({ error: "Insufficient permissions" }, { status: 403 });
+  }
 
   const { brandId } = (await req.json()) as { brandId?: string };
   if (!brandId) return NextResponse.json({ error: "brandId required" }, { status: 400 });
@@ -31,6 +34,6 @@ export async function POST(req: Request) {
     }
   }
 
-  const analyzed = await analyzeQueued(4);
+  const analyzed = await analyzeQueued({ brandId, limit: 4 });
   return NextResponse.json({ activeJobs: jobs.length, analyzed });
 }

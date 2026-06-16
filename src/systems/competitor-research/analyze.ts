@@ -1,13 +1,23 @@
 import "server-only";
-import type Anthropic from "@anthropic-ai/sdk";
-import { and, asc, eq, inArray, lt, sql } from "drizzle-orm";
+import Anthropic from "@anthropic-ai/sdk";
+import { and, asc, eq, gte, inArray, lt, sql } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
 import { callClaude, toolResult } from "@/lib/providers/claude";
 import { callGemini } from "@/lib/providers/gemini";
 import { downloadFromStorage } from "@/lib/storage";
 import { SYSTEM_KEY } from "./ingest";
 
-const MAX_ATTEMPTS = 3;
+export const MAX_ATTEMPTS = 3;
+
+/** Transient (retryable) network/provider errors must NOT burn an attempt. */
+function isTransient(e: unknown): boolean {
+  if (e instanceof Anthropic.APIConnectionError || e instanceof Anthropic.APIConnectionTimeoutError) return true;
+  if (e instanceof Anthropic.APIError) {
+    const s = e.status ?? 0;
+    return s === 429 || s >= 500;
+  }
+  return /connection error|fetch failed|econnreset|etimedout|socket|network/i.test(String((e as { message?: string })?.message ?? e));
+}
 
 const ANALYSIS_TOOL: Anthropic.Tool = {
   name: "emit_ad_analysis",
@@ -161,66 +171,119 @@ async function analyzeOne(ad: AdRow, cache: Map<string, string>): Promise<void> 
     .where(eq(schema.competitorAds.id, ad.id));
 }
 
-/** Claim a bounded batch of queued ads and analyse them. Returns count processed. */
-export async function analyzeQueued(limit = 6): Promise<number> {
-  const queued = await db
-    .select()
-    .from(schema.competitorAds)
-    .where(and(eq(schema.competitorAds.aiAnalysisStatus, "queued"), lt(schema.competitorAds.aiAttempts, MAX_ATTEMPTS)))
-    .limit(limit);
+/**
+ * Atomically claim a bounded batch of queued ads (FOR UPDATE SKIP LOCKED) and
+ * analyse them. brandId scopes the claim to one brand (the UI tick passes it;
+ * the cron leaves it global). Returns count processed.
+ */
+export async function analyzeQueued(opts: { brandId?: string; limit?: number } = {}): Promise<number> {
+  const limit = opts.limit ?? 6;
+  const brandId = opts.brandId;
 
-  if (queued.length === 0) {
-    await completeFinishedJobs();
+  // Reconcile: any ad stranded 'queued' at/over the cap → 'failed' (otherwise the
+  // claim filter skips it forever and it blocks job completion).
+  await db
+    .update(schema.competitorAds)
+    .set({ aiAnalysisStatus: "failed", aiErrorMessage: sql`coalesce(${schema.competitorAds.aiErrorMessage}, 'Exhausted attempts')`, updatedAt: new Date() })
+    .where(
+      and(
+        eq(schema.competitorAds.aiAnalysisStatus, "queued"),
+        gte(schema.competitorAds.aiAttempts, MAX_ATTEMPTS),
+        ...(brandId ? [eq(schema.competitorAds.brandId, brandId)] : [])
+      )
+    );
+
+  // Atomic claim: lock & flip 'queued'→'processing' in one statement so the cron
+  // and the UI tick can never grab the same rows (no double-spend, no double-increment).
+  const brandFilter = brandId ? sql`AND brand_id = ${brandId}` : sql``;
+  const claimedRows = await db.execute(sql`
+    UPDATE competitor_ads
+    SET ai_analysis_status = 'processing', ai_attempts = ai_attempts + 1, updated_at = now()
+    WHERE id IN (
+      SELECT id FROM competitor_ads
+      WHERE ai_analysis_status = 'queued' AND ai_attempts < ${MAX_ATTEMPTS} ${brandFilter}
+      ORDER BY created_at ASC
+      LIMIT ${limit}
+      FOR UPDATE SKIP LOCKED
+    )
+    RETURNING id
+  `);
+  const claimedIds = (claimedRows as unknown as { id: string }[]).map((r) => r.id);
+
+  if (claimedIds.length === 0) {
+    await completeFinishedJobs(brandId);
     return 0;
   }
 
-  const ids = queued.map((q) => q.id);
-  await db
-    .update(schema.competitorAds)
-    .set({ aiAnalysisStatus: "processing", aiAttempts: sql`${schema.competitorAds.aiAttempts} + 1`, updatedAt: new Date() })
-    .where(inArray(schema.competitorAds.id, ids));
+  // Read back claimed rows (typed, with the post-increment aiAttempts).
+  const claimed = await db.select().from(schema.competitorAds).where(inArray(schema.competitorAds.id, claimedIds));
 
   const cache = new Map<string, string>();
-  for (const ad of queued) {
+  for (const ad of claimed) {
     try {
       await analyzeOne(ad, cache);
     } catch (e) {
-      const willFail = ad.aiAttempts + 1 >= MAX_ATTEMPTS;
-      await db
-        .update(schema.competitorAds)
-        .set({
-          aiAnalysisStatus: willFail ? "failed" : "queued",
-          aiErrorMessage: String(e).slice(0, 300),
-          updatedAt: new Date(),
-        })
-        .where(eq(schema.competitorAds.id, ad.id));
+      if (isTransient(e)) {
+        // hand the attempt back — a network blip must not consume retry budget
+        await db
+          .update(schema.competitorAds)
+          .set({ aiAnalysisStatus: "queued", aiAttempts: sql`greatest(${schema.competitorAds.aiAttempts} - 1, 0)`, aiErrorMessage: String(e).slice(0, 300), updatedAt: new Date() })
+          .where(eq(schema.competitorAds.id, ad.id));
+      } else {
+        const exhausted = ad.aiAttempts >= MAX_ATTEMPTS; // already post-increment
+        await db
+          .update(schema.competitorAds)
+          .set({ aiAnalysisStatus: exhausted ? "failed" : "queued", aiErrorMessage: String(e).slice(0, 300), updatedAt: new Date() })
+          .where(eq(schema.competitorAds.id, ad.id));
+      }
     }
   }
 
-  await completeFinishedJobs();
-  return queued.length;
+  await completeFinishedJobs(brandId);
+  return claimed.length;
 }
 
-/** Flip 'analyzing' jobs to 'complete' once none of their ads are queued/processing. */
-async function completeFinishedJobs(): Promise<void> {
+/** Flip 'analyzing' jobs to 'complete' once no ad is still RETRYABLE. */
+async function completeFinishedJobs(brandId?: string): Promise<void> {
   const jobs = await db
-    .select({ id: schema.scrapeJobs.id })
+    .select({ id: schema.scrapeJobs.id, stats: schema.scrapeJobs.stats, createdAt: schema.scrapeJobs.createdAt })
     .from(schema.scrapeJobs)
-    .where(eq(schema.scrapeJobs.status, "analyzing"));
+    .where(and(eq(schema.scrapeJobs.status, "analyzing"), ...(brandId ? [eq(schema.scrapeJobs.brandId, brandId)] : [])));
+
   for (const job of jobs) {
     const [{ pending }] = await db
       .select({ pending: sql<number>`count(*)`.mapWith(Number) })
       .from(schema.competitorAds)
+      .where(
+        and(
+          eq(schema.competitorAds.scrapeJobId, job.id),
+          inArray(schema.competitorAds.aiAnalysisStatus, ["queued", "processing"]),
+          lt(schema.competitorAds.aiAttempts, MAX_ATTEMPTS)
+        )
+      );
+    if (pending > 0) continue;
+
+    // No retryable ads left → force any leftover exhausted rows to 'failed' so the job can complete.
+    await db
+      .update(schema.competitorAds)
+      .set({ aiAnalysisStatus: "failed", aiErrorMessage: sql`coalesce(${schema.competitorAds.aiErrorMessage}, 'Exhausted attempts')`, updatedAt: new Date() })
       .where(and(eq(schema.competitorAds.scrapeJobId, job.id), inArray(schema.competitorAds.aiAnalysisStatus, ["queued", "processing"])));
-    if (pending === 0) {
-      const [{ analyzed }] = await db
-        .select({ analyzed: sql<number>`count(*)`.mapWith(Number) })
-        .from(schema.competitorAds)
-        .where(and(eq(schema.competitorAds.scrapeJobId, job.id), eq(schema.competitorAds.aiAnalysisStatus, "complete")));
-      await db
-        .update(schema.scrapeJobs)
-        .set({ status: "complete", stats: { adsAnalyzed: analyzed }, updatedAt: new Date() })
-        .where(eq(schema.scrapeJobs.id, job.id));
-    }
+
+    // count only ads analysed during THIS run (re-tagged historical completes are excluded)
+    const [{ analyzed }] = await db
+      .select({ analyzed: sql<number>`count(*)`.mapWith(Number) })
+      .from(schema.competitorAds)
+      .where(
+        and(
+          eq(schema.competitorAds.scrapeJobId, job.id),
+          eq(schema.competitorAds.aiAnalysisStatus, "complete"),
+          gte(schema.competitorAds.aiLastAnalyzedAt, job.createdAt)
+        )
+      );
+
+    await db
+      .update(schema.scrapeJobs)
+      .set({ status: "complete", stats: { ...(job.stats ?? {}), adsAnalyzed: analyzed }, updatedAt: new Date() })
+      .where(eq(schema.scrapeJobs.id, job.id));
   }
 }

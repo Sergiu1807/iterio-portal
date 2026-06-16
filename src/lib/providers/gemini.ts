@@ -21,20 +21,32 @@ export async function callGemini(params: CallGeminiParams): Promise<string> {
   if (params.media) {
     parts.push({ inlineData: { mimeType: params.media.mimeType, data: params.media.base64 } });
   }
+  const body = JSON.stringify({
+    contents: [{ parts }],
+    generationConfig: { temperature: 0.3, maxOutputTokens: params.maxOutputTokens ?? 1024 },
+  });
 
-  const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`,
-    {
-      method: "POST",
-      headers: { "content-type": "application/json", "x-goog-api-key": key },
-      body: JSON.stringify({
-        contents: [{ parts }],
-        generationConfig: { temperature: 0.3, maxOutputTokens: params.maxOutputTokens ?? 1024 },
-      }),
+  // Bounded retry with backoff on 429/5xx/network (raw REST has no built-in retry).
+  let res: Response | null = null;
+  let lastErr = "";
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-goog-api-key": key },
+        body,
+        signal: AbortSignal.timeout(60_000),
+      });
+      if (res.ok) break;
+      if (res.status !== 429 && res.status < 500) break; // non-retryable
+      lastErr = `Gemini ${res.status}`;
+    } catch (e) {
+      lastErr = String(e);
     }
-  );
-  if (!res.ok) {
-    throw new Error(`Gemini ${res.status}: ${(await res.text()).slice(0, 300)}`);
+    await new Promise((r) => setTimeout(r, 600 * (attempt + 1)));
+  }
+  if (!res || !res.ok) {
+    throw new Error(res ? `Gemini ${res.status}: ${(await res.text()).slice(0, 200)}` : lastErr || "Gemini request failed");
   }
   const data = await res.json();
   const text: string =

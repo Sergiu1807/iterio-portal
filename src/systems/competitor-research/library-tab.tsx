@@ -67,7 +67,13 @@ export function LibraryTab({
     if (sort === "newest") arr.sort((a, b) => new Date(b.adStartDate ?? 0).getTime() - new Date(a.adStartDate ?? 0).getTime());
     else if (sort === "longest")
       arr.sort((a, b) => (longevityBadge(b.snapshotDate, b.adStartDate)?.days ?? -1) - (longevityBadge(a.snapshotDate, a.adStartDate)?.days ?? -1));
-    else arr.sort((a, b) => (a.metaSortRank ?? 999) - (b.metaSortRank ?? 999));
+    else
+      arr.sort((a, b) => {
+        const r = (a.metaSortRank ?? 999) - (b.metaSortRank ?? 999);
+        if (r !== 0) return r;
+        // deterministic tie-break: latest snapshot first (rank is only per-run)
+        return new Date(b.snapshotDate ?? b.adStartDate ?? 0).getTime() - new Date(a.snapshotDate ?? a.adStartDate ?? 0).getTime();
+      });
     return arr;
   }, [ads, search, typeFilter, sort]);
 
@@ -206,13 +212,33 @@ export function LibraryTab({
 function AdCard({ ad, onClick }: { ad: Ad; onClick: () => void }) {
   const badge = longevityBadge(ad.snapshotDate, ad.adStartDate);
   const title = ad.creativeAngle || ad.headlineTitle || "Untitled ad";
+  const [thumb, setThumb] = useState(ad.thumbUrl);
+  const [reSigned, setReSigned] = useState(false);
+  const mediaMissing = !!ad.mediaType && ad.mediaType !== "text" && !thumb;
+
+  const onThumbError = async () => {
+    if (reSigned) return setThumb(null);
+    setReSigned(true);
+    try {
+      const r = await fetch(`/api/systems/competitor-research/ad/${ad.id}/media`);
+      if (r.ok) {
+        const fresh = await r.json();
+        setThumb(fresh.thumbUrl ?? null);
+        return;
+      }
+    } catch {
+      /* ignore */
+    }
+    setThumb(null);
+  };
+
   return (
     <button onClick={onClick} className="group text-left">
       <BentoCard interactive className="flex h-full flex-col overflow-hidden p-0">
         <div className="relative aspect-[4/3] w-full overflow-hidden bg-muted">
-          {ad.thumbUrl ? (
+          {thumb ? (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={ad.thumbUrl} alt="" className="size-full object-cover transition-transform duration-300 group-hover:scale-105" loading="lazy" />
+            <img src={thumb} alt="" className="size-full object-cover transition-transform duration-300 group-hover:scale-105" loading="lazy" onError={onThumbError} />
           ) : (
             <div className="flex size-full items-center justify-center text-muted-foreground">{MEDIA_ICON[ad.mediaType ?? "image"] ?? <ImageIcon className="size-6" />}</div>
           )}
@@ -235,6 +261,11 @@ function AdCard({ ad, onClick }: { ad: Ad; onClick: () => void }) {
               <Badge variant={ad.aiAnalysisStatus === "failed" ? "warning" : "soon"} className="bg-card/85 backdrop-blur">
                 {ad.aiAnalysisStatus === "failed" ? "analysis failed" : "analyzing…"}
               </Badge>
+            </span>
+          )}
+          {mediaMissing && (
+            <span className="absolute bottom-2 right-2">
+              <Badge variant="muted" className="bg-card/85 backdrop-blur">media unavailable</Badge>
             </span>
           )}
         </div>
