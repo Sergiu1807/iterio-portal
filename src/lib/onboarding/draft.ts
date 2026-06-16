@@ -16,7 +16,7 @@ export function pickPalette(seed: string) {
   return PALETTES[h % PALETTES.length];
 }
 
-const SECTION_BLUEPRINT: { sectionType: SectionType; title: string }[] = [
+export const SECTION_BLUEPRINT: { sectionType: SectionType; title: string }[] = [
   { sectionType: "identity", title: "Core Identity & Mission" },
   { sectionType: "audience", title: "Target Customer Profile" },
   { sectionType: "products", title: "Key Products & Services" },

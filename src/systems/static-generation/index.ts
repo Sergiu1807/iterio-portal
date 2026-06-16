@@ -1,3 +1,4 @@
+import { lazy } from "react";
 import { Image } from "lucide-react";
 import type { SystemDefinition } from "../types";
 
@@ -14,7 +15,7 @@ export const staticGeneration: SystemDefinition = {
     "Reference & winners libraries",
     "In-place copy editing",
   ],
-  status: "placeholder",
+  status: "live",
   nav: { group: "create", order: 20 },
   infra: [
     { kind: "apiKey", keyName: "ANTHROPIC_API_KEY", label: "Anthropic Claude" },
@@ -23,4 +24,5 @@ export const staticGeneration: SystemDefinition = {
   perBrand: true,
   enabledByDefault: false,
   accent: "#C2785A",
+  Component: lazy(() => import("./component")),
 };
