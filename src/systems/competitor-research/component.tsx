@@ -26,6 +26,7 @@ export default function CompetitorResearchSystem({ brandId }: { brandId: string 
   const [sources, setSources] = useState<Source[]>([]);
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
+  const [count, setCount] = useState(20); // ads-per-scrape, shared by quick-scrape + per-source refresh
   const [selected, setSelected] = useState<Ad | null>(null);
 
   const activeJob = useMemo(() => jobs.find((j) => ACTIVE.includes(j.status)) ?? null, [jobs]);
@@ -87,9 +88,9 @@ export default function CompetitorResearchSystem({ brandId }: { brandId: string 
   const refreshSource = useCallback(
     (s: Source) => {
       if (!s.metaLibraryUrl) return;
-      runScrape({ mode: "url", query: s.metaLibraryUrl, country: s.country ?? "ALL", count: 20, competitorId: s.id }).then(() => loadSources());
+      runScrape({ mode: "url", query: s.metaLibraryUrl, country: s.country ?? "ALL", count, competitorId: s.id }).then(() => loadSources());
     },
-    [runScrape, loadSources]
+    [runScrape, loadSources, count]
   );
 
   return (
@@ -114,11 +115,11 @@ export default function CompetitorResearchSystem({ brandId }: { brandId: string 
         </TabsList>
 
         <TabsContent value="library">
-          <LibraryTab ads={ads} loading={loading} activeJob={activeJob} running={running} onRunScrape={runScrape} onSelect={setSelected} />
+          <LibraryTab ads={ads} loading={loading} activeJob={activeJob} running={running} count={count} setCount={setCount} onRunScrape={runScrape} onSelect={setSelected} />
         </TabsContent>
 
         <TabsContent value="competitors">
-          <CompetitorsTab brandId={brandId} sources={sources} reload={loadSources} onRefresh={refreshSource} />
+          <CompetitorsTab brandId={brandId} sources={sources} reload={loadSources} onRefresh={refreshSource} count={count} setCount={setCount} />
         </TabsContent>
       </Tabs>
 

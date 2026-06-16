@@ -28,6 +28,9 @@ export function timeAgo(date: string | null): string {
   return `${Math.floor(h / 24)}d ago`;
 }
 
+/** Ads-per-scrape presets (the actor's `count`). Route caps at 100. */
+export const AD_COUNTS = [10, 20, 30, 50, 100];
+
 export const MEDIA_TYPES = ["video", "image", "carousel", "text"] as const;
 export type MediaType = (typeof MEDIA_TYPES)[number];
 

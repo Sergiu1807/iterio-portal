@@ -31,7 +31,7 @@ export async function POST(req: Request) {
     ? (body.mode as ScrapeMode)
     : "url";
   const country = (body.country || "ALL").trim();
-  const requestedCount = Math.min(50, Math.max(1, body.requestedCount || 20));
+  const requestedCount = Math.min(100, Math.max(1, body.requestedCount || 20));
   const query = body.query.trim();
 
   if (mode === "url" && !isAdLibraryUrl(query)) {

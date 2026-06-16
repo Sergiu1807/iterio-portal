@@ -10,18 +10,22 @@ import { Switch } from "@/components/ui/switch";
 import { Input, Label } from "@/components/ui/input";
 import { EmptyState } from "@/components/shared/empty-state";
 import type { Source } from "./ui-types";
-import { COUNTRIES, timeAgo } from "./ui-utils";
+import { COUNTRIES, timeAgo, AD_COUNTS } from "./ui-utils";
 
 export function CompetitorsTab({
   brandId,
   sources,
   reload,
   onRefresh,
+  count,
+  setCount,
 }: {
   brandId: string;
   sources: Source[];
   reload: () => void;
   onRefresh: (source: Source) => void;
+  count: number;
+  setCount: (n: number) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
@@ -65,11 +69,25 @@ export function CompetitorsTab({
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-muted-foreground">Add competitors by their Meta Ad Library link, then Refresh to pull their live ads.</p>
-        <Button size="sm" variant="outline" onClick={() => setOpen((o) => !o)}>
-          <Plus className="size-4" /> Add competitor
-        </Button>
+        <div className="flex items-center gap-2">
+          <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            Ads/scrape
+            <select
+              value={count}
+              onChange={(e) => setCount(Number(e.target.value))}
+              className="h-9 rounded-xl border border-input bg-background/60 px-2.5 text-sm"
+            >
+              {AD_COUNTS.map((n) => (
+                <option key={n} value={n}>{n}</option>
+              ))}
+            </select>
+          </label>
+          <Button size="sm" variant="outline" onClick={() => setOpen((o) => !o)}>
+            <Plus className="size-4" /> Add competitor
+          </Button>
+        </div>
       </div>
 
       {open && (

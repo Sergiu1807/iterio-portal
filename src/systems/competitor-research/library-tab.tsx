@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
 import { EmptyState } from "@/components/shared/empty-state";
 import type { Ad, Job } from "./ui-types";
-import { longevityBadge, mediaLabel, MEDIA_TYPES } from "./ui-utils";
+import { longevityBadge, mediaLabel, MEDIA_TYPES, AD_COUNTS } from "./ui-utils";
 
 const MEDIA_ICON: Record<string, React.ReactNode> = {
   video: <Play className="size-3" />,
@@ -25,6 +25,8 @@ export function LibraryTab({
   loading,
   activeJob,
   running,
+  count,
+  setCount,
   onRunScrape,
   onSelect,
 }: {
@@ -32,13 +34,14 @@ export function LibraryTab({
   loading: boolean;
   activeJob: Job | null;
   running: boolean;
+  count: number;
+  setCount: (n: number) => void;
   onRunScrape: (args: RunArgs) => void;
   onSelect: (ad: Ad) => void;
 }) {
   const [mode, setMode] = useState<"url" | "page_id" | "keyword">("url");
   const [query, setQuery] = useState("");
   const [country, setCountry] = useState("ALL");
-  const [count, setCount] = useState(20);
 
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState<Set<string>>(new Set());
@@ -109,9 +112,17 @@ export function LibraryTab({
               <Input value={country} onChange={(e) => setCountry(e.target.value)} placeholder="ALL" />
             </div>
           )}
-          <div className="w-20 space-y-1.5">
-            <Label>Count</Label>
-            <Input type="number" value={count} min={1} max={50} onChange={(e) => setCount(Number(e.target.value))} />
+          <div className="w-28 space-y-1.5">
+            <Label>Ads to scrape</Label>
+            <select
+              value={count}
+              onChange={(e) => setCount(Number(e.target.value))}
+              className="h-10 w-full rounded-xl border border-input bg-background/60 px-3 text-sm"
+            >
+              {AD_COUNTS.map((n) => (
+                <option key={n} value={n}>{n} ads</option>
+              ))}
+            </select>
           </div>
           <Button onClick={() => onRunScrape({ mode, query, country, count })} disabled={running || !query.trim()}>
             {running ? <Loader2 className="size-4 animate-spin" /> : <Play className="size-4" />} Run scrape
