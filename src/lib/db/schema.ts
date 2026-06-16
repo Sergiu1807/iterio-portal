@@ -136,6 +136,8 @@ export const competitors = pgTable(
     tiktokHandle: text("tiktok_handle"),
     metaPageId: text("meta_page_id"),
     metaSearchTerms: text("meta_search_terms"),
+    metaLibraryUrl: text("meta_library_url"),
+    country: text("country").notNull().default("ALL"),
     type: text("type"),
     isActive: boolean("is_active").notNull().default(true),
     lastScrapedAt: timestamp("last_scraped_at", { withTimezone: true }),
@@ -241,8 +243,11 @@ export const competitorAds = pgTable(
     isDco: boolean("is_dco").notNull().default(false),
     // media (stored as Supabase Storage paths)
     mediaType: text("media_type"), // video | image | carousel | text
-    primaryThumbnail: text("primary_thumbnail"),
+    primaryThumbnail: text("primary_thumbnail"), // poster image path
+    videoPath: text("video_path"), // stored full video path (video ads)
+    mediaCards: jsonb("media_cards").$type<string[]>().notNull().default([]), // carousel image paths
     fullMediaAsset: text("full_media_asset"),
+    platformsDisplay: text("platforms_display"),
     // ad copy
     displayPrimaryText: text("display_primary_text"),
     headlineTitle: text("headline_title"),

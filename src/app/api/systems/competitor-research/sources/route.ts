@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { and, eq } from "drizzle-orm";
 import { requireAuth, isAuthError } from "@/lib/auth";
 import { db, schema } from "@/lib/db";
+import { isAdLibraryUrl } from "@/systems/competitor-research/meta-url";
 
 export async function GET(req: Request) {
   const auth = await requireAuth();
@@ -19,17 +20,25 @@ export async function POST(req: Request) {
   const b = (await req.json()) as {
     brandId?: string;
     name?: string;
+    metaLibraryUrl?: string;
     metaPageId?: string;
     metaSearchTerms?: string;
     websiteUrl?: string;
+    country?: string;
     type?: string;
   };
   if (!b.brandId || !b.name?.trim()) return NextResponse.json({ error: "brandId and name required" }, { status: 400 });
+  const metaLibraryUrl = b.metaLibraryUrl?.trim() || null;
+  if (metaLibraryUrl && !isAdLibraryUrl(metaLibraryUrl)) {
+    return NextResponse.json({ error: "Meta Ad Library link must be a facebook.com/ads/library URL" }, { status: 400 });
+  }
   const [source] = await db
     .insert(schema.competitors)
     .values({
       brandId: b.brandId,
       name: b.name.trim(),
+      metaLibraryUrl,
+      country: b.country?.trim() || "ALL",
       metaPageId: b.metaPageId?.trim() || null,
       metaSearchTerms: b.metaSearchTerms?.trim() || null,
       websiteUrl: b.websiteUrl?.trim() || null,
@@ -46,7 +55,7 @@ export async function PATCH(req: Request) {
   const { id, ...patch } = (await req.json()) as { id?: string } & Record<string, unknown>;
   if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
   const allowed: Record<string, unknown> = {};
-  for (const k of ["name", "metaPageId", "metaSearchTerms", "websiteUrl", "type", "isActive"]) {
+  for (const k of ["name", "metaLibraryUrl", "country", "metaPageId", "metaSearchTerms", "websiteUrl", "type", "isActive"]) {
     if (k in patch) allowed[k] = patch[k];
   }
   allowed.updatedAt = new Date();

@@ -68,11 +68,34 @@ function mimeFor(path: string): string {
   if (path.endsWith(".gif")) return "image/gif";
   return "image/jpeg";
 }
+function videoMimeFor(path: string): string {
+  if (path.endsWith(".webm")) return "video/webm";
+  if (path.endsWith(".mov")) return "video/quicktime";
+  return "video/mp4";
+}
+// Gemini inline request cap ~20MB (base64 inflates ~33%) → keep raw video under ~14MB,
+// else fall back to poster-frame analysis.
+const MAX_INLINE_VIDEO = 14 * 1024 * 1024;
 
 async function analyzeOne(ad: AdRow, cache: Map<string, string>): Promise<void> {
   let geminiDesc = "";
-  if (ad.primaryThumbnail) {
-    try {
+  let analyzedVideo = false;
+  try {
+    if (ad.videoPath) {
+      const buf = await downloadFromStorage(ad.videoPath);
+      if (buf.length <= MAX_INLINE_VIDEO) {
+        analyzedVideo = true;
+        geminiDesc = await callGemini({
+          prompt:
+            "Analyse this competitor VIDEO ad. Describe, concretely: (1) the visual hook in the first 1–3 seconds, (2) what happens scene by scene, (3) any spoken/voiceover lines — transcribe them verbatim, (4) on-screen text, (5) the closing CTA/offer.",
+          media: { base64: buf.toString("base64"), mimeType: videoMimeFor(ad.videoPath) },
+          maxOutputTokens: 1600,
+          systemKey: SYSTEM_KEY,
+          brandId: ad.brandId,
+        });
+      }
+    }
+    if (!geminiDesc && ad.primaryThumbnail) {
       const buf = await downloadFromStorage(ad.primaryThumbnail);
       geminiDesc = await callGemini({
         prompt:
@@ -81,9 +104,9 @@ async function analyzeOne(ad: AdRow, cache: Map<string, string>): Promise<void> 
         systemKey: SYSTEM_KEY,
         brandId: ad.brandId,
       });
-    } catch {
-      /* media analysis is best-effort */
     }
+  } catch {
+    /* media analysis is best-effort */
   }
 
   const brief = await brandBrief(ad.brandId, cache);
@@ -93,9 +116,13 @@ async function analyzeOne(ad: AdRow, cache: Map<string, string>): Promise<void> 
     `Advertiser: ${ad.brandPageName ?? "unknown"}`,
     `Media type: ${ad.mediaType ?? "unknown"}`,
     `Primary text: ${ad.displayPrimaryText ?? "(none)"}`,
+    `Headline: ${ad.headlineTitle ?? "(none)"}`,
     `CTA: ${ad.ctaButtonType ?? "(none)"}`,
     `Destination: ${ad.destinationUrl ?? "(none)"}`,
-    `Visual analysis: ${geminiDesc || "(no media available)"}`,
+    `${analyzedVideo ? "VIDEO analysis" : "Visual analysis"}: ${geminiDesc || "(no media available)"}`,
+    analyzedVideo
+      ? "\nUse the video analysis to fill spoken_hook and full_transcript with the actual voiceover/spoken lines."
+      : "",
     "\nReturn the structured breakdown via the emit_ad_analysis tool.",
   ].join("\n");
 

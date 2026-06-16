@@ -26,7 +26,12 @@ export async function GET(req: Request) {
     .limit(60);
 
   const adsWithUrls = await Promise.all(
-    ads.map(async (a) => ({ ...a, thumbUrl: await signedUrl(a.primaryThumbnail) }))
+    ads.map(async (a) => ({
+      ...a,
+      thumbUrl: await signedUrl(a.primaryThumbnail),
+      videoUrl: await signedUrl(a.videoPath),
+      cardUrls: (await Promise.all((a.mediaCards ?? []).map((p) => signedUrl(p)))).filter(Boolean) as string[],
+    }))
   );
 
   return NextResponse.json({ jobs, ads: adsWithUrls });

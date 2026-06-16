@@ -4,8 +4,9 @@ import { db, schema } from "@/lib/db";
 import { getApifyRun, listApifyDataset, recordApifyUsage } from "@/lib/providers/apify";
 import { fetchExternalMedia, uploadToStorage, storagePath, extFromContentType } from "@/lib/storage";
 
-const PER_PASS = 12; // bound work per cron invocation
-export const SYSTEM_KEY = "competitor-research";
+const PER_PASS = 6; // videos are heavy — keep a cron pass under maxDuration
+const MAX_CARDS = 10;
+const SYSTEM_KEY = "competitor-research";
 
 type Job = typeof schema.scrapeJobs.$inferSelect;
 
@@ -14,14 +15,22 @@ type NormalizedAd = {
   pageId?: string;
   pageName?: string;
   adText?: string;
+  headline?: string;
   ctaText?: string;
   linkUrl?: string;
   displayDomain?: string;
   mediaType: "video" | "image" | "carousel" | "text";
   thumbnailUrl?: string;
   videoUrl?: string;
+  carouselImageUrls: string[];
   adLibraryUrl?: string;
   startDate?: Date;
+  metaSortRank: number;
+  isDco: boolean;
+  collationId?: string;
+  adGroupId?: string;
+  publisherPlatforms: string[];
+  platformsDisplay?: string;
 };
 
 const str = (v: unknown): string | undefined => (typeof v === "string" && v.trim() ? v : undefined);
@@ -34,7 +43,25 @@ function toDate(v: unknown): Date | undefined {
   return isNaN(+d) ? undefined : d;
 }
 
-export function normalizeMetaAd(raw: Record<string, any>): NormalizedAd | null {
+const PLATFORM_LABEL: Record<string, string> = {
+  FACEBOOK: "Facebook",
+  INSTAGRAM: "Instagram",
+  MESSENGER: "Messenger",
+  AUDIENCE_NETWORK: "Audience Network",
+  WHATSAPP: "WhatsApp",
+  THREADS: "Threads",
+};
+
+function domainFrom(url?: string): string | undefined {
+  if (!url) return undefined;
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return undefined;
+  }
+}
+
+export function normalizeMetaAd(raw: Record<string, any>, index: number): NormalizedAd | null {
   const snap = raw?.snapshot ?? {};
   const adArchiveId = String(
     raw?.adArchiveID ?? raw?.ad_archive_id ?? raw?.adArchiveId ?? snap?.ad_archive_id ?? raw?.id ?? ""
@@ -48,32 +75,59 @@ export function normalizeMetaAd(raw: Record<string, any>): NormalizedAd | null {
   let mediaType: NormalizedAd["mediaType"] = "text";
   let thumbnailUrl: string | undefined;
   let videoUrl: string | undefined;
+  const carouselImageUrls: string[] = [];
 
   if (videos.length) {
     mediaType = "video";
     videoUrl = str(videos[0]?.video_hd_url) ?? str(videos[0]?.video_sd_url);
     thumbnailUrl = str(videos[0]?.video_preview_image_url) ?? str(images[0]?.original_image_url) ?? str(cards[0]?.original_image_url);
-  } else if (cards.length) {
+  } else if (cards.length >= 2) {
     mediaType = "carousel";
+    for (const c of cards.slice(0, MAX_CARDS)) {
+      const u = str(c?.original_image_url) ?? str(c?.resized_image_url);
+      if (u) carouselImageUrls.push(u);
+    }
+    thumbnailUrl = carouselImageUrls[0];
+  } else if (cards.length === 1) {
+    mediaType = "image";
     thumbnailUrl = str(cards[0]?.original_image_url) ?? str(cards[0]?.resized_image_url);
   } else if (images.length) {
     mediaType = "image";
     thumbnailUrl = str(images[0]?.original_image_url) ?? str(images[0]?.resized_image_url);
   }
 
+  const linkUrl = str(snap?.link_url) ?? str(cards[0]?.link_url);
+  const platformsRaw: string[] = Array.isArray(raw?.publisher_platforms)
+    ? raw.publisher_platforms
+    : Array.isArray(snap?.publisher_platforms)
+    ? snap.publisher_platforms
+    : [];
+  const publisherPlatforms = platformsRaw.map((p) => String(p).toUpperCase());
+  const platformsDisplay = publisherPlatforms.length
+    ? publisherPlatforms.map((p) => PLATFORM_LABEL[p] ?? p).join(", ")
+    : undefined;
+
   return {
     adArchiveId,
     pageId: str(raw?.pageID) ?? str(snap?.page_id) ?? str(raw?.page_id),
     pageName: str(snap?.page_name) ?? str(raw?.pageName),
     adText: str(snap?.body?.text) ?? str(raw?.adText),
-    ctaText: str(snap?.cta_text),
-    linkUrl: str(snap?.link_url),
-    displayDomain: str(snap?.caption) ?? str(snap?.link_description),
+    headline: str(snap?.title) ?? str(cards[0]?.title) ?? str(snap?.link_description),
+    ctaText: str(snap?.cta_text) ?? str(cards[0]?.cta_text),
+    linkUrl,
+    displayDomain: str(snap?.caption) ?? domainFrom(linkUrl),
     mediaType,
     thumbnailUrl,
     videoUrl,
+    carouselImageUrls,
     adLibraryUrl: str(raw?.url),
     startDate: toDate(raw?.startDate ?? raw?.start_date ?? snap?.start_date),
+    metaSortRank: index,
+    isDco: !!(raw?.is_dco ?? snap?.is_dco ?? raw?.isDco),
+    collationId: str(raw?.collationID ?? raw?.collation_id ?? snap?.collation_id),
+    adGroupId: str(raw?.adGroupID ?? raw?.ad_group_id ?? snap?.ad_group_id),
+    publisherPlatforms,
+    platformsDisplay,
   };
 }
 
@@ -84,9 +138,16 @@ async function fail(jobId: string, message: string) {
   await db.update(schema.scrapeJobs).set({ status: "error", errorMessage: message, updatedAt: new Date() }).where(eq(schema.scrapeJobs.id, jobId));
 }
 
+async function storeMedia(brandSlug: string, adArchiveId: string, name: string, url: string, maxBytes: number): Promise<string | null> {
+  const media = await fetchExternalMedia(url, { maxBytes });
+  if (!media) return null;
+  const path = storagePath(brandSlug, "scraped-meta-ads", `${adArchiveId}-${name}.${extFromContentType(media.contentType)}`);
+  await uploadToStorage(path, media.buffer, media.contentType);
+  return path;
+}
+
 async function ingestOne(job: Job, brandSlug: string, ad: NormalizedAd, isExisting: boolean): Promise<void> {
   if (isExisting) {
-    // cross-run duplicate → bump dedup_count once and re-tag to this job
     await db
       .update(schema.competitorAds)
       .set({ dedupCount: sql`${schema.competitorAds.dedupCount} + 1`, scrapeJobId: job.id, updatedAt: new Date() })
@@ -94,12 +155,21 @@ async function ingestOne(job: Job, brandSlug: string, ad: NormalizedAd, isExisti
     return;
   }
 
-  let thumbPath: string | null = null;
-  if (ad.thumbnailUrl) {
-    const media = await fetchExternalMedia(ad.thumbnailUrl, { maxBytes: 25 * 1024 * 1024 });
-    if (media) {
-      thumbPath = storagePath(brandSlug, "scraped-meta-ads", `${ad.adArchiveId}-thumb.${extFromContentType(media.contentType)}`);
-      await uploadToStorage(thumbPath, media.buffer, media.contentType);
+  // poster (always, small)
+  const thumbPath = ad.thumbnailUrl ? await storeMedia(brandSlug, ad.adArchiveId, "thumb", ad.thumbnailUrl, 25 * 1024 * 1024).catch(() => null) : null;
+
+  // full video (best-effort)
+  let videoPath: string | null = null;
+  if (ad.mediaType === "video" && ad.videoUrl) {
+    videoPath = await storeMedia(brandSlug, ad.adArchiveId, "video", ad.videoUrl, 200 * 1024 * 1024).catch(() => null);
+  }
+
+  // carousel frames (best-effort)
+  const mediaCards: string[] = [];
+  if (ad.mediaType === "carousel") {
+    for (let i = 0; i < ad.carouselImageUrls.length; i++) {
+      const p = await storeMedia(brandSlug, ad.adArchiveId, `card${i}`, ad.carouselImageUrls[i], 25 * 1024 * 1024).catch(() => null);
+      if (p) mediaCards.push(p);
     }
   }
 
@@ -109,17 +179,27 @@ async function ingestOne(job: Job, brandSlug: string, ad: NormalizedAd, isExisti
       brandId: job.brandId,
       scrapeJobId: job.id,
       adArchiveId: ad.adArchiveId,
+      adGroupId: ad.adGroupId ?? null,
+      collationId: ad.collationId ?? null,
       competitorPageId: ad.pageId ?? null,
       brandPageName: ad.pageName ?? null,
+      snapshotDate: new Date(),
+      adStartDate: ad.startDate ?? null,
+      metaSortRank: ad.metaSortRank,
+      isDco: ad.isDco,
       mediaType: ad.mediaType,
       primaryThumbnail: thumbPath,
-      fullMediaAsset: thumbPath, // pilot: own the poster; deep video capture is a follow-up
+      videoPath,
+      mediaCards,
+      fullMediaAsset: videoPath ?? thumbPath,
+      platformsDisplay: ad.platformsDisplay ?? null,
       displayPrimaryText: ad.adText ?? null,
+      headlineTitle: ad.headline ?? null,
       ctaButtonType: ad.ctaText ?? null,
       destinationUrl: ad.linkUrl ?? null,
       displayDomain: ad.displayDomain ?? null,
       adLibraryUrl: ad.adLibraryUrl ?? null,
-      adStartDate: ad.startDate ?? null,
+      publisherPlatforms: ad.publisherPlatforms,
       aiAnalysisStatus: "queued",
     })
     .onConflictDoNothing();
@@ -138,7 +218,7 @@ export async function pollAndIngestJob(job: Job): Promise<void> {
   if (["FAILED", "ABORTED", "TIMED-OUT", "TIMED_OUT"].includes(run.status)) {
     return fail(job.id, `Apify run ${run.status}`);
   }
-  if (run.status !== "SUCCEEDED") return; // unknown state — wait for next pass
+  if (run.status !== "SUCCEEDED") return;
 
   if (job.status !== "ingesting") await setStatus(job.id, "ingesting");
 
@@ -149,7 +229,9 @@ export async function pollAndIngestJob(job: Job): Promise<void> {
   const brandSlug = brand?.slug ?? job.brandId;
 
   const items = await listApifyDataset<Record<string, any>>(datasetId, job.requestedCount + 10);
-  const normalized = items.map(normalizeMetaAd).filter((n): n is NormalizedAd => !!n);
+  const normalized = items
+    .map((raw, i) => normalizeMetaAd(raw, i))
+    .filter((n): n is NormalizedAd => !!n);
 
   const archiveIds = normalized.map((n) => n.adArchiveId);
   const existing = archiveIds.length
@@ -160,7 +242,6 @@ export async function pollAndIngestJob(job: Job): Promise<void> {
     : [];
   const byArchive = new Map(existing.map((e) => [e.adArchiveId, e.scrapeJobId]));
 
-  // not yet associated with THIS job
   const remaining = normalized.filter((n) => byArchive.get(n.adArchiveId) !== job.id);
   const batch = remaining.slice(0, PER_PASS);
 
@@ -183,3 +264,5 @@ export async function pollAndIngestJob(job: Job): Promise<void> {
     await db.update(schema.scrapeJobs).set({ apifyDatasetId: datasetId, updatedAt: new Date() }).where(eq(schema.scrapeJobs.id, job.id));
   }
 }
+
+export { SYSTEM_KEY };
