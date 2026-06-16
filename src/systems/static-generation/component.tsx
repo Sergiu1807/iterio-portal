@@ -16,6 +16,7 @@ import { BriefTab } from "./brief-tab";
 import { GalleryTab } from "./gallery-tab";
 import { LibraryTab } from "./library-tab";
 import { GenActions } from "./result-tile";
+import { EditCopyDialog } from "./edit-dialog";
 import { isActive } from "./ui-utils";
 import type { Generation } from "./ui-types";
 
@@ -128,6 +129,7 @@ function StaticWorkspace({
   rebuilding: boolean;
 }) {
   const [generations, setGenerations] = useState<Generation[]>([]);
+  const [editGen, setEditGen] = useState<Generation | null>(null);
 
   const loadGenerations = useCallback(async () => {
     const r = await fetch(`/api/systems/static-generation/generations?brandId=${brandId}`);
@@ -142,7 +144,14 @@ function StaticWorkspace({
 
   const renderActions = useCallback(
     (gen: Generation) => (
-      <GenActions brandId={brandId} gen={gen} canRefineProduct={!!gen.productId} canRefineLogo={config.hasLogo} onDone={loadGenerations} />
+      <GenActions
+        brandId={brandId}
+        gen={gen}
+        canRefineProduct={!!gen.productId}
+        canRefineLogo={config.hasLogo}
+        onDone={loadGenerations}
+        onEdit={setEditGen}
+      />
     ),
     [brandId, config.hasLogo, loadGenerations]
   );
@@ -220,6 +229,16 @@ function StaticWorkspace({
           <SettingsPanel brandId={brandId} config={config} reload={reloadConfig} onRebuild={onRebuild} rebuilding={rebuilding} />
         </TabsContent>
       </Tabs>
+
+      <EditCopyDialog
+        brandId={brandId}
+        gen={editGen}
+        onClose={() => setEditGen(null)}
+        onDone={() => {
+          setEditGen(null);
+          loadGenerations();
+        }}
+      />
     </div>
   );
 }
