@@ -2,11 +2,12 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, Building2, BookOpen, Sparkles } from "lucide-react";
+import { LayoutDashboard, Building2, BookOpen, Sparkles, ShieldCheck } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { systemsByGroup } from "@/systems/registry";
 import { NAV_GROUP_LABELS } from "@/systems/types";
 import { allInfraReady } from "@/lib/infra";
+import { usePortalMeta } from "@/lib/portal-meta";
 import { BrandSwitcher } from "./brand-switcher";
 import { ThemeToggle } from "./theme-toggle";
 
@@ -19,6 +20,7 @@ const BASE_NAV = [
 export function PortalSidebar() {
   const pathname = usePathname();
   const groups = systemsByGroup();
+  const { role, configuredKeys } = usePortalMeta();
 
   const isActive = (href: string) =>
     href === pathname || (href !== "/dashboard" && pathname.startsWith(href));
@@ -44,6 +46,11 @@ export function PortalSidebar() {
               {item.name}
             </NavLink>
           ))}
+          {role === "admin" && (
+            <NavLink href="/admin" active={isActive("/admin")} icon={ShieldCheck}>
+              Admin
+            </NavLink>
+          )}
         </div>
 
         {groups.map(({ group, systems }) => (
@@ -52,7 +59,7 @@ export function PortalSidebar() {
               {NAV_GROUP_LABELS[group]}
             </p>
             {systems.map((s) => {
-              const ready = allInfraReady(s.infra);
+              const ready = allInfraReady(s.infra, configuredKeys);
               return (
                 <NavLink
                   key={s.key}

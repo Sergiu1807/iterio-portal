@@ -7,6 +7,7 @@ import { BookOpen, Check, Trash2, PackageX, Boxes } from "lucide-react";
 import { useBrand } from "@/lib/brand-store";
 import { navSystems } from "@/systems/registry";
 import { allInfraReady } from "@/lib/infra";
+import { usePortalMeta } from "@/lib/portal-meta";
 import { PageHeader } from "@/components/shared/page-header";
 import { BentoCard } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -28,6 +29,7 @@ export default function BrandDetailPage() {
   const slug = String(params.slug ?? "");
   const router = useRouter();
   const { brands, currentBrandId, setCurrentBrand, updateBrand, removeBrand } = useBrand();
+  const { configuredKeys } = usePortalMeta();
   const [confirmOpen, setConfirmOpen] = useState(false);
 
   const brand = brands.find((b) => b.slug === slug);
@@ -101,7 +103,7 @@ export default function BrandDetailPage() {
           <div className="space-y-1">
             {systems.map((s) => {
               const on = enabledFor(s.key, s.enabledByDefault);
-              const ready = allInfraReady(s.infra);
+              const ready = allInfraReady(s.infra, configuredKeys);
               return (
                 <div key={s.key} className="flex items-center gap-3 rounded-xl px-2 py-2.5 transition-colors hover:bg-muted/50">
                   <span className="flex size-9 items-center justify-center rounded-[28%]" style={{ background: `${s.accent}1f`, color: s.accent }}>

@@ -3,6 +3,7 @@
 import { Check, Circle } from "lucide-react";
 import type { InfraRequirement } from "@/systems/types";
 import { infraStatus } from "@/lib/infra";
+import { usePortalMeta } from "@/lib/portal-meta";
 import { cn } from "@/lib/utils";
 
 const KIND_LABEL: Record<InfraRequirement["kind"], string> = {
@@ -12,6 +13,7 @@ const KIND_LABEL: Record<InfraRequirement["kind"], string> = {
 };
 
 export function InfraChecklist({ infra }: { infra: InfraRequirement[] }) {
+  const { configuredKeys } = usePortalMeta();
   if (infra.length === 0) {
     return (
       <p className="text-sm text-muted-foreground">
@@ -19,7 +21,7 @@ export function InfraChecklist({ infra }: { infra: InfraRequirement[] }) {
       </p>
     );
   }
-  const items = infraStatus(infra);
+  const items = infraStatus(infra, configuredKeys);
   return (
     <ul className="space-y-2.5">
       {items.map(({ req, ready }, i) => (

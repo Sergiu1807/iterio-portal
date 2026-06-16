@@ -80,3 +80,35 @@ export async function requireAdmin(): Promise<AuthResult | NextResponse> {
 export function isAuthError(result: AuthResult | NextResponse): result is NextResponse {
   return result instanceof NextResponse;
 }
+
+/** Page-friendly variant (returns null instead of a NextResponse) for gating
+ *  Server Components with redirect(). */
+export async function getCurrentProfile(): Promise<Profile | null> {
+  const supabase = await createSupabaseServerClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return null;
+
+  let [profile] = await db
+    .select()
+    .from(schema.profiles)
+    .where(eq(schema.profiles.id, user.id))
+    .limit(1);
+
+  if (!profile) {
+    const email = (user.email || "").toLowerCase();
+    const role: Role = adminEmails().includes(email) ? "admin" : "member";
+    await db
+      .insert(schema.profiles)
+      .values({ id: user.id, email: user.email ?? null, role })
+      .onConflictDoNothing();
+    [profile] = await db
+      .select()
+      .from(schema.profiles)
+      .where(eq(schema.profiles.id, user.id))
+      .limit(1);
+  }
+
+  return profile && profile.isActive ? (profile as Profile) : null;
+}

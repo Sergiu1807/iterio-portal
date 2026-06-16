@@ -1,27 +1,40 @@
 import type { InfraRequirement } from "@/systems/types";
+import { SYSTEMS } from "@/systems/registry";
 
-/**
- * Frontend prototype: mock which integrations are "configured". In the real
- * build this resolves against the encrypted api_keys table + app_config.workflows.
- * Anthropic is treated as configured so Brief Generation reads as ready and the
- * others show an accurate "Needs setup" badge.
- */
-const CONFIGURED_KEYS = new Set<string>(["ANTHROPIC_API_KEY"]);
-const CONFIGURED_N8N = new Set<string>(); // none wired in the prototype
+// Client-safe. Readiness is computed against a set of configured key names
+// (provided by PortalMeta, sourced from the api_keys table + env).
 
-export function infraReady(req: InfraRequirement): boolean {
-  if (req.kind === "n8n") return CONFIGURED_N8N.has(req.workflowKey);
-  return CONFIGURED_KEYS.has(req.keyName);
+export function infraReady(req: InfraRequirement, configured: Set<string>): boolean {
+  if (req.kind === "n8n") return false; // this lab is n8n-free
+  return configured.has(req.keyName);
 }
 
-export function infraStatus(reqs: InfraRequirement[]): { req: InfraRequirement; ready: boolean }[] {
-  return reqs.map((req) => ({ req, ready: infraReady(req) }));
+export function infraStatus(
+  reqs: InfraRequirement[],
+  configured: Set<string>
+): { req: InfraRequirement; ready: boolean }[] {
+  return reqs.map((req) => ({ req, ready: infraReady(req, configured) }));
 }
 
-export function allInfraReady(reqs: InfraRequirement[]): boolean {
-  return reqs.length === 0 || reqs.every(infraReady);
+export function allInfraReady(reqs: InfraRequirement[], configured: Set<string>): boolean {
+  return reqs.length === 0 || reqs.every((r) => infraReady(r, configured));
 }
 
-export function reqLabel(req: InfraRequirement): string {
-  return req.label;
+// ---- registry-derived key ↔ system mapping (no separate table needed) ----
+
+function keyNameOf(req: InfraRequirement): string | null {
+  return req.kind === "n8n" ? null : req.keyName;
+}
+
+export function keysForSystem(systemKey: string): string[] {
+  const s = SYSTEMS.find((x) => x.key === systemKey);
+  if (!s) return [];
+  return s.infra.map(keyNameOf).filter((k): k is string => !!k);
+}
+
+export function systemsForKey(keyName: string): { key: string; name: string }[] {
+  return SYSTEMS.filter((s) => s.infra.some((r) => keyNameOf(r) === keyName)).map((s) => ({
+    key: s.key,
+    name: s.name,
+  }));
 }

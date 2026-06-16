@@ -1,7 +1,10 @@
+"use client";
+
 import Link from "next/link";
 import { ArrowUpRight, Check, Lock } from "lucide-react";
 import type { SystemDefinition } from "@/systems/types";
 import { allInfraReady, infraStatus } from "@/lib/infra";
+import { usePortalMeta } from "@/lib/portal-meta";
 import { BentoCard } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 
@@ -12,8 +15,9 @@ export function SystemCard({
   system: SystemDefinition;
   enabled: boolean;
 }) {
-  const ready = allInfraReady(system.infra);
-  const missing = infraStatus(system.infra).filter((s) => !s.ready);
+  const { configuredKeys } = usePortalMeta();
+  const ready = allInfraReady(system.infra, configuredKeys);
+  const missing = infraStatus(system.infra, configuredKeys).filter((s) => !s.ready);
   const Icon = system.icon;
 
   return (

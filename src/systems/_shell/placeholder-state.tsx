@@ -5,6 +5,7 @@ import { Check, Sparkles, ArrowRight, Wrench, Blocks } from "lucide-react";
 import type { SystemDefinition } from "@/systems/types";
 import { useBrand } from "@/lib/brand-store";
 import { allInfraReady } from "@/lib/infra";
+import { usePortalMeta } from "@/lib/portal-meta";
 import { BentoCard } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -13,8 +14,9 @@ import { InfraChecklist } from "./infra-checklist";
 
 export function PlaceholderState({ system }: { system: SystemDefinition }) {
   const { currentBrand } = useBrand();
+  const { configuredKeys } = usePortalMeta();
   const Icon = system.icon;
-  const ready = allInfraReady(system.infra);
+  const ready = allInfraReady(system.infra, configuredKeys);
 
   return (
     <div className="space-y-7">
