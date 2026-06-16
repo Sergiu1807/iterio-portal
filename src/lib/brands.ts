@@ -3,6 +3,7 @@ import { eq, inArray, asc } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
 import type { Brand, BrandDraft } from "@/lib/types";
 import { slugify } from "@/lib/utils";
+import { signedUrl } from "@/lib/storage";
 
 // ---- mapping: normalized rows → the Brand domain object the UI expects ----
 
@@ -70,6 +71,23 @@ export async function getAllBrands(): Promise<Brand[]> {
   );
 }
 
+/** Fresh signed display URLs for a brand's product images, keyed by product id.
+ *  Paths live in the DB (products.image_url / video_image_url); the private
+ *  bucket means the UI can only render time-limited signed URLs, so we resolve
+ *  them on demand here rather than polluting the persisted Brand object. */
+export type ProductMediaMap = Record<string, { image: string | null; video: string | null }>;
+
+export async function getBrandProductMedia(brandId: string): Promise<ProductMediaMap> {
+  const rows = await db
+    .select({ id: schema.products.id, imageUrl: schema.products.imageUrl, videoImageUrl: schema.products.videoImageUrl })
+    .from(schema.products)
+    .where(eq(schema.products.brandId, brandId));
+  const entries = await Promise.all(
+    rows.map(async (r) => [r.id, { image: await signedUrl(r.imageUrl), video: await signedUrl(r.videoImageUrl) }] as const)
+  );
+  return Object.fromEntries(entries);
+}
+
 async function uniqueSlug(base: string): Promise<string> {
   const root = slugify(base) || `brand-${Date.now().toString(36)}`;
   let slug = root;
@@ -109,7 +127,7 @@ export async function createBrandFromDraft(draft: BrandDraft, ownerId?: string):
       draft.sections.map((s, i) => ({ brandId: brand.id, title: s.title, sectionType: s.sectionType, content: s.content, sortOrder: s.sortOrder ?? i }))
     );
   if (draft.products.length)
-    await db.insert(schema.products).values(draft.products.map((p) => ({ brandId: brand.id, name: p.name, category: p.category ?? null, keyBenefits: p.keyBenefits ?? null, price: p.price ?? null, productUrl: p.productUrl ?? null, isHero: p.isHero ?? false })));
+    await db.insert(schema.products).values(draft.products.map((p) => ({ brandId: brand.id, name: p.name, category: p.category ?? null, keyBenefits: p.keyBenefits ?? null, price: p.price ?? null, productUrl: p.productUrl ?? null, imageUrl: p.imageUrl ?? null, videoImageUrl: p.videoImageUrl ?? null, isHero: p.isHero ?? false })));
   if (draft.personas.length)
     await db.insert(schema.personas).values(draft.personas.map((p) => ({ brandId: brand.id, name: p.name, demographics: p.demographics ?? null, psychographics: p.psychographics ?? null, painPoints: p.painPoints ?? null, desires: p.desires ?? null })));
   if (draft.usps.length)
@@ -154,7 +172,7 @@ export async function updateBrandRecord(id: string, patch: Partial<Brand>): Prom
   if (patch.products) {
     await db.delete(schema.products).where(eq(schema.products.brandId, id));
     if (patch.products.length)
-      await db.insert(schema.products).values(patch.products.map((p) => ({ brandId: id, name: p.name, category: p.category ?? null, keyBenefits: p.keyBenefits ?? null, price: p.price ?? null, productUrl: p.productUrl ?? null, isHero: p.isHero ?? false })));
+      await db.insert(schema.products).values(patch.products.map((p) => ({ brandId: id, name: p.name, category: p.category ?? null, keyBenefits: p.keyBenefits ?? null, price: p.price ?? null, productUrl: p.productUrl ?? null, imageUrl: p.imageUrl ?? null, videoImageUrl: p.videoImageUrl ?? null, isHero: p.isHero ?? false })));
   }
   if (patch.personas) {
     await db.delete(schema.personas).where(eq(schema.personas.brandId, id));

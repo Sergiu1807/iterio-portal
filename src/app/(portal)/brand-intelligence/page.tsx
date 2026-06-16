@@ -1,8 +1,9 @@
 "use client";
 
-import { Plus, X, Star, ExternalLink } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Plus, X, Star, ExternalLink, Image as ImageIcon, Maximize2 } from "lucide-react";
 import { useBrand } from "@/lib/brand-store";
-import { uid } from "@/lib/utils";
+import { uid, cn } from "@/lib/utils";
 import type { Brand } from "@/lib/types";
 import { PageHeader } from "@/components/shared/page-header";
 import { BentoCard } from "@/components/ui/card";
@@ -10,8 +11,14 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { BrandMark } from "@/components/ui/brand-mark";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { IntelSections } from "@/components/brand/intel-sections";
 import { AddResourceDialog } from "@/components/brand/add-resource-dialog";
+
+/** Signed display URLs for product images (1:1 + 9:16), keyed by product id.
+ *  Resolved on demand from /api/brands/[id]/product-media — never stored in the
+ *  brand object (which keeps the raw storage paths). */
+type ProductMedia = Record<string, { image: string | null; video: string | null }>;
 
 export default function BrandIntelligencePage() {
   const { currentBrand, updateBrand, isReady } = useBrand();
@@ -48,46 +55,7 @@ export default function BrandIntelligencePage() {
         </TabsContent>
 
         <TabsContent value="products">
-          <ResourceHeader
-            label="Products"
-            add={
-              <AddResourceDialog
-                title="Add product"
-                fields={[
-                  { name: "name", label: "Name", placeholder: "Daily Stack" },
-                  { name: "category", label: "Category", placeholder: "Supplement" },
-                  { name: "price", label: "Price", placeholder: "$68/mo" },
-                  { name: "keyBenefits", label: "Key benefits", placeholder: "What it does", textarea: true },
-                ]}
-                onSubmit={(v) =>
-                  updateBrand(brand.id, {
-                    products: [...brand.products, { id: uid("prod"), name: v.name, category: v.category, price: v.price, keyBenefits: v.keyBenefits }],
-                  })
-                }
-                trigger={<AddButton />}
-              />
-            }
-          />
-          {brand.products.length === 0 ? (
-            <Empty text="No products yet." />
-          ) : (
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {brand.products.map((p) => (
-                <BentoCard key={p.id} className="group relative p-5">
-                  <RemoveBtn onClick={() => updateBrand(brand.id, { products: brand.products.filter((x) => x.id !== p.id) })} />
-                  <div className="mb-2 flex items-center gap-2">
-                    <h3 className="font-display text-base font-medium">{p.name}</h3>
-                    {p.isHero && <Badge variant="accent"><Star className="size-3" /> Hero</Badge>}
-                  </div>
-                  <div className="mb-2.5 flex flex-wrap gap-1.5">
-                    {p.category && <Badge variant="muted">{p.category}</Badge>}
-                    {p.price && <Badge variant="outline">{p.price}</Badge>}
-                  </div>
-                  {p.keyBenefits && <p className="text-sm leading-relaxed text-muted-foreground">{p.keyBenefits}</p>}
-                </BentoCard>
-              ))}
-            </div>
-          )}
+          <ProductsTab brand={brand} />
         </TabsContent>
 
         <TabsContent value="audience">
@@ -268,6 +236,172 @@ function Empty({ text }: { text: string }) {
   return (
     <div className="rounded-[var(--radius)] border border-dashed border-border px-6 py-12 text-center text-sm text-muted-foreground">
       {text}
+    </div>
+  );
+}
+
+function ProductsTab({ brand }: { brand: Brand }) {
+  const { updateBrand } = useBrand();
+  const [media, setMedia] = useState<ProductMedia | null>(null);
+  const reSigningRef = useRef(false);
+
+  const fetchMedia = useCallback(async () => {
+    const r = await fetch(`/api/brands/${brand.id}/product-media`).catch(() => null);
+    if (r && r.ok) setMedia(((await r.json()) as { media: ProductMedia }).media ?? {});
+  }, [brand.id]);
+
+  // Load signed image URLs whenever the active brand changes.
+  useEffect(() => {
+    setMedia(null);
+    fetchMedia();
+  }, [fetchMedia]);
+
+  // Signed URLs expire (~1h). On an <img> error, re-fetch fresh ones once,
+  // collapsing a storm of simultaneous errors into a single request.
+  const onReSign = useCallback(() => {
+    if (reSigningRef.current) return;
+    reSigningRef.current = true;
+    fetchMedia().finally(() => {
+      setTimeout(() => {
+        reSigningRef.current = false;
+      }, 3000);
+    });
+  }, [fetchMedia]);
+
+  return (
+    <>
+      <ResourceHeader
+        label="Products"
+        add={
+          <AddResourceDialog
+            title="Add product"
+            fields={[
+              { name: "name", label: "Name", placeholder: "Daily Stack" },
+              { name: "category", label: "Category", placeholder: "Supplement" },
+              { name: "price", label: "Price", placeholder: "$68/mo" },
+              { name: "keyBenefits", label: "Key benefits", placeholder: "What it does", textarea: true },
+            ]}
+            onSubmit={(v) =>
+              updateBrand(brand.id, {
+                products: [...brand.products, { id: uid("prod"), name: v.name, category: v.category, price: v.price, keyBenefits: v.keyBenefits }],
+              })
+            }
+            trigger={<AddButton />}
+          />
+        }
+      />
+      {brand.products.length === 0 ? (
+        <Empty text="No products yet." />
+      ) : (
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+          {brand.products.map((p) => (
+            <BentoCard key={p.id} className="group relative p-5">
+              <RemoveBtn onClick={() => updateBrand(brand.id, { products: brand.products.filter((x) => x.id !== p.id) })} />
+              <ProductImages media={media?.[p.id]} loading={media === null} name={p.name} onReSign={onReSign} />
+              <div className="mb-2 flex items-center gap-2">
+                <h3 className="font-display text-base font-medium">{p.name}</h3>
+                {p.isHero && <Badge variant="accent"><Star className="size-3" /> Hero</Badge>}
+              </div>
+              <div className="mb-2.5 flex flex-wrap gap-1.5">
+                {p.category && <Badge variant="muted">{p.category}</Badge>}
+                {p.price && <Badge variant="outline">{p.price}</Badge>}
+              </div>
+              {p.keyBenefits && <p className="text-sm leading-relaxed text-muted-foreground">{p.keyBenefits}</p>}
+            </BentoCard>
+          ))}
+        </div>
+      )}
+    </>
+  );
+}
+
+/** The 1:1 (static) + 9:16 (video) product images, side by side. */
+function ProductImages({
+  media,
+  loading,
+  name,
+  onReSign,
+}: {
+  media: { image: string | null; video: string | null } | undefined;
+  loading: boolean;
+  name: string;
+  onReSign: () => void;
+}) {
+  const [zoom, setZoom] = useState<{ src: string; ratio: "1:1" | "9:16" } | null>(null);
+  return (
+    <>
+      <div className="mb-3 flex gap-2">
+        <ProductThumb src={media?.image ?? null} ratio="1:1" loading={loading} alt={`${name} — square`} onReSign={onReSign} onZoom={(src) => setZoom({ src, ratio: "1:1" })} />
+        <ProductThumb src={media?.video ?? null} ratio="9:16" loading={loading} alt={`${name} — portrait`} onReSign={onReSign} onZoom={(src) => setZoom({ src, ratio: "9:16" })} />
+      </div>
+      <Dialog open={!!zoom} onOpenChange={(o) => !o && setZoom(null)}>
+        <DialogContent className="max-w-md p-3">
+          {zoom && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={zoom.src} alt={name} className={cn("mx-auto w-full rounded-xl", zoom.ratio === "9:16" && "max-h-[78vh] w-auto")} />
+          )}
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
+function ProductThumb({
+  src,
+  ratio,
+  loading,
+  alt,
+  onReSign,
+  onZoom,
+}: {
+  src: string | null;
+  ratio: "1:1" | "9:16";
+  loading: boolean;
+  alt: string;
+  onReSign: () => void;
+  onZoom: (src: string) => void;
+}) {
+  const [errored, setErrored] = useState(false);
+  const triedRef = useRef(false);
+
+  // Reset error/retry tracking when a fresh signed URL arrives.
+  useEffect(() => {
+    setErrored(false);
+    triedRef.current = false;
+  }, [src]);
+
+  const show = !!src && !errored;
+  return (
+    <div className={cn("relative h-32 shrink-0 overflow-hidden rounded-xl border border-border/60 bg-muted", ratio === "1:1" ? "aspect-square" : "aspect-[9/16]")}>
+      {show ? (
+        <button type="button" onClick={() => onZoom(src!)} className="group/thumb block size-full" aria-label={`Expand ${alt}`}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={src!}
+            alt={alt}
+            loading="lazy"
+            className="size-full object-cover transition-transform duration-300 group-hover/thumb:scale-105"
+            onError={() => {
+              if (!triedRef.current) {
+                triedRef.current = true;
+                onReSign();
+              } else {
+                setErrored(true);
+              }
+            }}
+          />
+          <span className="pointer-events-none absolute inset-0 flex items-center justify-center bg-foreground/0 opacity-0 transition-all group-hover/thumb:bg-foreground/15 group-hover/thumb:opacity-100">
+            <Maximize2 className="size-4 text-white drop-shadow" />
+          </span>
+        </button>
+      ) : loading ? (
+        <div className="size-full animate-pulse bg-muted" />
+      ) : (
+        <div className="flex size-full items-center justify-center text-muted-foreground/40">
+          <ImageIcon className="size-5" />
+        </div>
+      )}
+      <span className="pointer-events-none absolute bottom-1 left-1 rounded bg-card/85 px-1.5 py-0.5 text-[10px] font-medium tracking-wide text-muted-foreground backdrop-blur">{ratio}</span>
     </div>
   );
 }
