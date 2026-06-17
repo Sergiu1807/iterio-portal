@@ -14,7 +14,7 @@ export function PortalShell({ children }: { children: React.ReactNode }) {
           <div className="flex min-h-screen bg-background">
             <PortalSidebar />
             <main className="relative min-w-0 flex-1">
-              <div className="mx-auto w-full max-w-6xl px-6 py-10 md:px-10 md:py-12">{children}</div>
+              <div className="mx-auto w-full max-w-[1600px] px-6 py-10 md:px-10 md:py-12 2xl:px-14">{children}</div>
             </main>
           </div>
           <CommandPalette />

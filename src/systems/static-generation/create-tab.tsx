@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { Loader2, Sparkles, Check, ImagePlus } from "lucide-react";
+import { Loader2, Sparkles, Check, ImagePlus, Wand2 } from "lucide-react";
 import { BentoCard } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -108,9 +108,15 @@ export function CreateTab({
   const canGenerate = mode === "reference" ? !!refPath : !!brief.trim();
 
   return (
-    <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,360px)_1fr]">
-      {/* ── form ── */}
-      <BentoCard className="space-y-5 p-5">
+    <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,380px)_1fr] lg:items-start">
+      {/* ── control rail ── */}
+      <BentoCard className="space-y-5 p-5 lg:sticky lg:top-6">
+        <div className="flex items-center gap-2">
+          <span className="flex size-7 items-center justify-center rounded-lg bg-primary/12 text-primary">
+            <Wand2 className="size-4" />
+          </span>
+          <h3 className="font-display text-base font-medium">Compose</h3>
+        </div>
         {/* product */}
         <Field label="Product">
           <div className="flex flex-wrap gap-2">
@@ -222,9 +228,7 @@ export function CreateTab({
         <Field label="Formats">
           <div className="flex flex-wrap gap-2">
             {ASPECT_RATIOS.map((r) => (
-              <ChipButton key={r} active={ratios.includes(r)} onClick={() => toggleRatio(r)}>
-                {r}
-              </ChipButton>
+              <FormatChip key={r} ratio={r} active={ratios.includes(r)} onClick={() => toggleRatio(r)} />
             ))}
           </div>
         </Field>
@@ -251,24 +255,27 @@ export function CreateTab({
           </Field>
         </div>
 
-        <Button onClick={generate} disabled={running || !canGenerate} className="w-full">
+        <Button onClick={generate} disabled={running || !canGenerate} size="lg" className={cn("w-full", canGenerate && !running && "cta-glow")}>
           {running ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />} Generate{" "}
           {ratios.length * variations > 1 ? `(${ratios.length * variations})` : ""}
         </Button>
       </BentoCard>
 
-      {/* ── results ── */}
-      <div>
+      {/* ── results canvas ── */}
+      <div className="results-canvas min-h-[62vh] p-4 md:p-5">
         {batchTiles.length === 0 ? (
-          <div className="flex h-full min-h-[280px] items-center justify-center rounded-[var(--radius)] border border-dashed border-border text-center text-sm text-muted-foreground">
-            <p className="max-w-xs">
+          <div className="flex h-full min-h-[52vh] flex-col items-center justify-center gap-3 text-center animate-fade-in">
+            <span className="flex size-12 items-center justify-center rounded-2xl bg-accent/12 text-accent">
+              <Wand2 className="size-6" />
+            </span>
+            <p className="max-w-xs text-sm text-muted-foreground">
               {mode === "reference"
-                ? "Pick a product, choose a reference, and hit Generate. Results appear here."
-                : "Pick a product (optional), write a brief, and hit Generate. Results appear here."}
+                ? "Pick a product, choose a reference, and hit Generate. Your results stream in here."
+                : "Pick a product (optional), write a brief, and hit Generate. Your results stream in here."}
             </p>
           </div>
         ) : (
-          <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
+          <div className="stagger grid gap-4 [grid-template-columns:repeat(auto-fill,minmax(220px,1fr))]">
             {batchTiles.map((g) => (
               <GenTile key={g.id} gen={g} onReload={reload} actions={renderActions} />
             ))}
@@ -301,6 +308,26 @@ export function ChipButton({ active, onClick, children }: { active: boolean; onC
       )}
     >
       {children}
+    </button>
+  );
+}
+
+function FormatChip({ ratio, active, onClick }: { ratio: string; active: boolean; onClick: () => void }) {
+  const [w, h] = ratio.split(":").map(Number);
+  const H = 16;
+  const W = Math.max(7, Math.round((w / h) * H));
+  return (
+    <button
+      onClick={onClick}
+      className={cn(
+        "flex items-center gap-2 rounded-xl border px-2.5 py-1.5 text-xs font-medium transition-colors",
+        active ? "border-primary/50 bg-primary/10 text-primary" : "border-border/70 text-muted-foreground hover:border-border hover:text-foreground"
+      )}
+    >
+      <span className="flex h-4 w-7 items-center justify-center">
+        <span className="rounded-[3px] border-2" style={{ width: W, height: H, borderColor: "currentColor" }} />
+      </span>
+      {ratio}
     </button>
   );
 }

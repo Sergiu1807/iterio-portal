@@ -2,8 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { Loader2, Sparkles, Upload, Trash2, ChevronDown, RefreshCw, AlertTriangle, CheckCircle2 } from "lucide-react";
-import { PageHeader } from "@/components/shared/page-header";
+import { Loader2, Sparkles, Upload, Trash2, ChevronDown, RefreshCw, AlertTriangle, CheckCircle2, Wand2, Images, FolderOpen, Settings2 } from "lucide-react";
 import { BentoCard } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -78,10 +77,10 @@ export default function StaticGenerationSystem({ brandId }: { brandId: string })
   if (config === null) {
     return (
       <SetupGate
-        title="Set up the Static Ad system"
+        title="Set up the Static studio"
         body={`We'll research ${currentBrand?.name ?? "this brand"}'s website, enrich its Brand Intelligence, and author this brand's two image agents. Starter prompts work immediately while it runs.`}
         action={
-          <Button onClick={runSetup} disabled={busy}>
+          <Button size="lg" onClick={runSetup} disabled={busy} className="cta-glow">
             {busy ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />} Set up Static system
           </Button>
         }
@@ -90,13 +89,7 @@ export default function StaticGenerationSystem({ brandId }: { brandId: string })
   }
 
   if (config.status === "building") {
-    return (
-      <SetupGate
-        title="Setting up…"
-        body="Researching the brand, enriching Brand Intelligence, and authoring the Static agent prompts. This takes a couple of minutes — you can leave this page; it keeps running."
-        action={<Badge variant="warning" className="gap-1.5"><Loader2 className="size-3 animate-spin" /> Building</Badge>}
-      />
-    );
+    return <SetupGate building title="Setting up your studio…" body="Researching the brand, enriching its intelligence, and authoring the Static agents. This takes a couple of minutes — you can leave; it keeps running." />;
   }
 
   // ── Workspace (ready | placeholder | error) ─────────────────────────────
@@ -176,51 +169,56 @@ function StaticWorkspace({
   }, [activeCount, brandId, loadGenerations]);
 
   return (
-    <div className="space-y-7">
-      <PageHeader
-        eyebrow="Create"
-        title="Static Ad Generation"
-        description={`On-brand static ads for ${brandName ?? "this brand"} — two agents, image generation, manual refine.`}
-        actions={
-          activeCount > 0 ? (
-            <Badge variant="warning" className="gap-1.5">
-              <Loader2 className="size-3 animate-spin" /> {activeCount} generating
-            </Badge>
-          ) : (
-            <StatusBadge config={config} />
-          )
-        }
-      />
+    <>
+      <Tabs defaultValue="create" className="space-y-5">
+        {/* studio top bar */}
+        <BentoCard inset={false} className="brand-wash relative overflow-hidden border-border/60 px-5 py-4 md:px-7 md:py-5">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div className="min-w-0">
+              <p className="mb-1 text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
+                {brandName ? `${brandName} · Studio` : "Static Studio"}
+              </p>
+              <h1 className="font-display letterpress text-2xl font-semibold tracking-tight md:text-[28px]">Static Ad Generation</h1>
+            </div>
+            <div className="flex flex-wrap items-center gap-3">
+              {activeCount > 0 ? (
+                <Badge variant="warning" className="gap-1.5">
+                  <Loader2 className="size-3 animate-spin" /> {activeCount} generating
+                </Badge>
+              ) : (
+                <StatusBadge config={config} />
+              )}
+              <TabsList className="flex-wrap">
+                <TabsTrigger value="create"><Wand2 className="size-3.5" /> Create</TabsTrigger>
+                <TabsTrigger value="gallery"><Images className="size-3.5" /> Gallery ({generations.length})</TabsTrigger>
+                <TabsTrigger value="library"><FolderOpen className="size-3.5" /> Library</TabsTrigger>
+                <TabsTrigger value="settings"><Settings2 className="size-3.5" /> Settings</TabsTrigger>
+              </TabsList>
+            </div>
+          </div>
+        </BentoCard>
 
-      {config.isPlaceholder && config.status !== "error" && (
-        <Banner tone="warning" icon={<AlertTriangle className="size-4" />}>
-          Using starter prompts. Open <strong>Settings → Rebuild prompts</strong> to research this brand and author tailored agents.
-        </Banner>
-      )}
-      {config.status === "error" && (
-        <Banner tone="error" icon={<AlertTriangle className="size-4" />}>
-          Prompt build failed{config.buildError ? `: ${config.buildError}` : ""}. Starter prompts are active — you can still generate, or retry from Settings.
-        </Banner>
-      )}
+        {config.isPlaceholder && config.status !== "error" && (
+          <Banner tone="warning" icon={<AlertTriangle className="size-4" />}>
+            Using starter prompts. Open <strong>Settings → Rebuild prompts</strong> to research this brand and author tailored agents.
+          </Banner>
+        )}
+        {config.status === "error" && (
+          <Banner tone="error" icon={<AlertTriangle className="size-4" />}>
+            Prompt build failed{config.buildError ? `: ${config.buildError}` : ""}. Starter prompts are active — you can still generate, or retry from Settings.
+          </Banner>
+        )}
 
-      <Tabs defaultValue="create">
-        <TabsList className="flex-wrap">
-          <TabsTrigger value="create">Create</TabsTrigger>
-          <TabsTrigger value="gallery">Gallery ({generations.length})</TabsTrigger>
-          <TabsTrigger value="library">Library</TabsTrigger>
-          <TabsTrigger value="settings">Settings</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="create">
+        <TabsContent value="create" className="mt-0">
           <CreateTab brandId={brandId} hasLogo={config.hasLogo} generations={generations} reload={loadGenerations} renderActions={renderActions} />
         </TabsContent>
-        <TabsContent value="gallery">
+        <TabsContent value="gallery" className="mt-0">
           <GalleryTab generations={generations} reload={loadGenerations} renderActions={renderActions} />
         </TabsContent>
-        <TabsContent value="library">
+        <TabsContent value="library" className="mt-0">
           <LibraryTab brandId={brandId} />
         </TabsContent>
-        <TabsContent value="settings">
+        <TabsContent value="settings" className="mt-0">
           <SettingsPanel brandId={brandId} config={config} reload={reloadConfig} onRebuild={onRebuild} rebuilding={rebuilding} />
         </TabsContent>
       </Tabs>
@@ -234,7 +232,7 @@ function StaticWorkspace({
           loadGenerations();
         }}
       />
-    </div>
+    </>
   );
 }
 
@@ -248,17 +246,33 @@ function StatusBadge({ config }: { config: NonNullable<Config> }) {
   );
 }
 
-function SetupGate({ title, body, action }: { title: string; body: string; action: React.ReactNode }) {
+function SetupGate({ title, body, action, building }: { title: string; body: string; action?: React.ReactNode; building?: boolean }) {
   return (
-    <div className="space-y-7">
-      <PageHeader eyebrow="Create" title="Static Ad Generation" description="On-brand static ads — two agents, image generation, manual refine." />
-      <BentoCard className="flex flex-col items-center gap-4 px-6 py-16 text-center">
-        <span className="flex size-12 items-center justify-center rounded-2xl bg-accent/12 text-accent">
-          <Sparkles className="size-6" />
+    <div className="py-6">
+      <BentoCard
+        inset={false}
+        className="brand-wash relative mx-auto flex max-w-2xl flex-col items-center gap-5 overflow-hidden border-border/60 px-6 py-20 text-center animate-fade-up"
+      >
+        <span className={cn("flex size-14 items-center justify-center rounded-2xl bg-accent/14 text-accent shadow-card", building && "cta-glow")}>
+          {building ? <Loader2 className="size-7 animate-spin" /> : <Sparkles className="size-7" />}
         </span>
-        <h3 className="font-display text-lg font-medium">{title}</h3>
-        <p className="max-w-md text-sm leading-relaxed text-muted-foreground">{body}</p>
-        <div className="mt-1">{action}</div>
+        <div className="space-y-2">
+          <h2 className="font-display letterpress text-2xl font-semibold tracking-tight">{title}</h2>
+          <p className="mx-auto max-w-md text-sm leading-relaxed text-muted-foreground">{body}</p>
+        </div>
+        {building ? (
+          <div className="w-full max-w-sm space-y-2.5 pt-2">
+            {["Researching the website", "Enriching brand intelligence", "Authoring the agents"].map((s) => (
+              <div key={s} className="flex items-center gap-3">
+                <span className="size-1.5 shrink-0 rounded-full bg-accent/60" />
+                <span className="h-2 flex-1 rounded-full shimmer" />
+                <span className="w-44 shrink-0 text-left text-[11px] text-muted-foreground">{s}</span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="mt-1">{action}</div>
+        )}
       </BentoCard>
     </div>
   );
@@ -294,9 +308,9 @@ function SettingsPanel({
   rebuilding: boolean;
 }) {
   return (
-    <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+    <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(280px,360px)_1fr]">
       <LogoCard brandId={brandId} config={config} reload={reload} />
-      <div className="space-y-4 lg:col-span-2">
+      <div className="space-y-3.5">
         <div className="flex items-center justify-between">
           <h3 className="font-display text-base font-medium">Brand agents</h3>
           <Button size="sm" variant="outline" onClick={onRebuild} disabled={rebuilding}>
@@ -306,7 +320,8 @@ function SettingsPanel({
         <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground/70">Create mode (reference → ad)</p>
         <PromptEditor brandId={brandId} label="Agent 1 — reference analyzer (vision → JSON)" field="agent1Prompt" value={config.agent1Prompt} reload={reload} />
         <PromptEditor brandId={brandId} label="Agent 2 — composer (→ image prompt)" field="agent2Prompt" value={config.agent2Prompt} reload={reload} />
-        <p className="pt-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground/70">Brief mode (text brief → ad)</p>
+        <hr className="divider-soft my-1" />
+        <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground/70">Brief mode (text brief → ad)</p>
         <PromptEditor brandId={brandId} label="Brief Agent 1 — brief analyzer (→ JSON)" field="briefAgent1Prompt" value={config.briefAgent1Prompt ?? ""} reload={reload} />
         <PromptEditor brandId={brandId} label="Brief Agent 2 — composer (→ image prompt)" field="briefAgent2Prompt" value={config.briefAgent2Prompt ?? ""} reload={reload} />
       </div>

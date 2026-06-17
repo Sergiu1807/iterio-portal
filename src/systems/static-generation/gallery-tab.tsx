@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { Images } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Generation } from "./ui-types";
 import { GenTile } from "./result-tile";
@@ -42,28 +43,33 @@ export function GalleryTab({
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-wrap items-center gap-1.5">
-        {STATUS_FILTERS.map((s) => (
-          <button
-            key={s}
-            onClick={() => setStatus(s)}
-            className={cn(
-              "rounded-full px-3 py-1 text-xs font-medium capitalize transition-colors",
-              status === s ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted hover:text-foreground"
-            )}
-          >
-            {s}
-          </button>
-        ))}
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="inline-flex items-center gap-1 rounded-full border border-border/70 bg-muted/60 p-1">
+          {STATUS_FILTERS.map((s) => (
+            <button
+              key={s}
+              onClick={() => setStatus(s)}
+              className={cn(
+                "rounded-full px-3.5 py-1.5 text-xs font-medium capitalize transition-all",
+                status === s ? "bg-card text-foreground shadow-[var(--shadow-xs)]" : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              {s}
+            </button>
+          ))}
+        </div>
         <span className="ml-auto text-xs text-muted-foreground">{filtered.length} image{filtered.length === 1 ? "" : "s"}</span>
       </div>
 
       {groups.length === 0 ? (
-        <div className="rounded-[var(--radius)] border border-dashed border-border px-6 py-16 text-center text-sm text-muted-foreground">
-          Nothing here yet. Generate some ads from the Create tab.
+        <div className="results-canvas flex min-h-[50vh] flex-col items-center justify-center gap-3 px-6 py-16 text-center">
+          <span className="flex size-12 items-center justify-center rounded-2xl bg-accent/12 text-accent">
+            <Images className="size-6" />
+          </span>
+          <p className="max-w-xs text-sm text-muted-foreground">Nothing here yet. Generate some ads from the Create tab and they’ll collect here.</p>
         </div>
       ) : (
-        <div className="space-y-6">
+        <div className="space-y-7">
           {groups.map((grp) => {
             const head = grp.items[0];
             const date = new Date(head.createdAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
@@ -73,8 +79,9 @@ export function GalleryTab({
                   <span className="font-medium text-foreground/80">{modeLabel(head.mode)}</span>
                   <span>· {grp.items.length} image{grp.items.length === 1 ? "" : "s"}</span>
                   <span>· {date}</span>
+                  <span className="ml-1 h-px flex-1 bg-border/60" />
                 </div>
-                <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4">
+                <div className="stagger grid gap-4 [grid-template-columns:repeat(auto-fill,minmax(220px,1fr))]">
                   {grp.items.map((g) => (
                     <GenTile key={g.id} gen={g} onReload={reload} actions={renderActions} />
                   ))}

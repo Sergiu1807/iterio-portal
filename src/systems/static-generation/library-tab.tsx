@@ -63,22 +63,31 @@ export function LibraryTab({ brandId }: { brandId: string }) {
       </div>
 
       {loading ? (
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <div key={i} className="aspect-square animate-pulse rounded-2xl bg-muted/60" />
+        <div className="grid gap-4 [grid-template-columns:repeat(auto-fill,minmax(200px,1fr))]">
+          {Array.from({ length: 8 }).map((_, i) => (
+            <div key={i} className="aspect-square rounded-2xl shimmer" />
           ))}
         </div>
       ) : refs.length === 0 ? (
-        <div className="rounded-[var(--radius)] border border-dashed border-border px-6 py-16 text-center text-sm text-muted-foreground">
-          No references yet. Upload a few ads whose style you want to echo, or use “Save to library” on a generated result.
+        <div className="results-canvas flex min-h-[44vh] flex-col items-center justify-center gap-3 px-6 py-16 text-center">
+          <span className="flex size-12 items-center justify-center rounded-2xl bg-accent/12 text-accent">
+            <ImagePlus className="size-6" />
+          </span>
+          <p className="max-w-sm text-sm text-muted-foreground">No references yet. Upload a few ads whose style you want to echo, or use “Save to library” on a generated result.</p>
+          <Button size="sm" variant="outline" onClick={() => fileRef.current?.click()} disabled={uploading}>
+            {uploading ? <Loader2 className="size-4 animate-spin" /> : <ImagePlus className="size-4" />} Upload a reference
+          </Button>
         </div>
       ) : (
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4">
+        <div className="stagger grid gap-4 [grid-template-columns:repeat(auto-fill,minmax(200px,1fr))]">
           {refs.map((ref) => (
-            <div key={ref.id} className="group relative aspect-square overflow-hidden rounded-2xl border border-border/60 bg-muted">
+            <div
+              key={ref.id}
+              className="group relative aspect-square overflow-hidden rounded-2xl border border-border/60 bg-muted shadow-card transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[var(--shadow-card-hover)]"
+            >
               {ref.url ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={ref.url} alt={ref.name ?? ""} loading="lazy" className="size-full object-cover" onError={load} />
+                <img src={ref.url} alt={ref.name ?? ""} loading="lazy" className="size-full object-cover transition-transform duration-500 group-hover:scale-[1.04]" onError={load} />
               ) : null}
               <button
                 onClick={() => remove(ref.id)}
