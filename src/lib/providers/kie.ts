@@ -1,21 +1,23 @@
 import "server-only";
 import { getApiKey } from "@/lib/api-keys";
-import { recordUsage, computeImageCost } from "@/lib/usage";
+import { recordUsage, computeImageCost, computeVideoCost } from "@/lib/usage";
 
 /**
- * Kie AI image client for the Static Ad system.
+ * Kie AI client.
  *   Create task: POST /api/v1/jobs/createTask
  *   Poll task:   GET  /api/v1/jobs/recordInfo?taskId=...
  *
- * Two models:
- *   - nano-banana-2              → primary generation (text + reference/product/logo image inputs)
- *   - gpt-image-2-image-to-image → the manual "refine product" / "refine logo" / edit passes
+ * Models:
+ *   - nano-banana-2              → static generation (text + reference/product/logo image inputs)
+ *   - gpt-image-2-image-to-image → static "refine product" / "refine logo" / edit passes
+ *   - bytedance/seedance-2       → video generation (image→video + audio)
  */
 
 const KIE_API_BASE = "https://api.kie.ai/api/v1/jobs";
 
 export const NANO_BANANA_MODEL = "nano-banana-2";
 export const GPT_IMAGE_2_MODEL = "gpt-image-2-image-to-image";
+export const SEEDANCE_VIDEO_MODEL = "bytedance/seedance-2";
 
 /** Fixed refine prompts (ported from the proven portal flow). */
 export const REFINE_PROMPT_PRODUCT =
@@ -115,6 +117,29 @@ export async function submitGptImage2(params: {
   });
 }
 
+/** Submit a Seedance 2 video generation. `imageUrls` are publicly-fetchable
+ *  reference images (product / scene / characters); audio is always generated. */
+export async function submitSeedanceVideo(params: {
+  prompt: string;
+  imageUrls: string[];
+  aspectRatio?: string;
+  duration?: number;
+  resolution?: string;
+}): Promise<string> {
+  return createTask({
+    model: SEEDANCE_VIDEO_MODEL,
+    input: {
+      prompt: params.prompt,
+      reference_image_urls: params.imageUrls.length > 0 ? params.imageUrls : undefined,
+      aspect_ratio: params.aspectRatio || "9:16",
+      duration: params.duration || 10,
+      resolution: params.resolution || "720p",
+      generate_audio: true,
+      web_search: false,
+    },
+  });
+}
+
 export async function pollKieJob(taskId: string): Promise<KiePollResult> {
   const apiKey = await kieKey();
   const res = await fetch(`${KIE_API_BASE}/recordInfo?taskId=${encodeURIComponent(taskId)}`, {
@@ -171,6 +196,26 @@ export async function recordKieImageUsage(args: {
     model: args.model,
     units: { images: 1 },
     costUsd: computeImageCost(args.model, args.resolution),
+    meta: args.meta,
+  });
+}
+
+/** Record one finished video into usage_events (estimated cost — Kie bills separately). */
+export async function recordKieVideoUsage(args: {
+  model: string;
+  duration?: number;
+  systemKey?: string;
+  brandId?: string;
+  meta?: Record<string, unknown>;
+}): Promise<void> {
+  await recordUsage({
+    provider: "kie",
+    systemKey: args.systemKey,
+    brandId: args.brandId,
+    keyName: "KIE_AI_API_KEY",
+    model: args.model,
+    units: { videos: 1 },
+    costUsd: computeVideoCost(args.model, args.duration),
     meta: args.meta,
   });
 }

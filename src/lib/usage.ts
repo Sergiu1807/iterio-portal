@@ -32,6 +32,17 @@ export function computeImageCost(model: string, resolution = "2K"): number {
   return m?.[resolution] ?? m?.["2K"] ?? 0.02;
 }
 
+// Per-video price estimates (USD) by model + duration (seconds). Kie bills
+// separately; these are best-effort so Admin → Usage reflects video spend.
+const VIDEO_PRICE: Record<string, Record<number, number>> = {
+  "bytedance/seedance-2": { 5: 0.25, 10: 0.5, 15: 0.75 },
+};
+
+export function computeVideoCost(model: string, duration = 10): number {
+  const m = VIDEO_PRICE[model];
+  return m?.[duration] ?? m?.[10] ?? 0.5;
+}
+
 export type UsageProvider = "anthropic" | "gemini" | "apify" | "kie";
 
 export type UsageEvent = {

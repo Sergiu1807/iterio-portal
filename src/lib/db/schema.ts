@@ -356,3 +356,84 @@ export const staticReferences = pgTable(
   },
   (t) => [index("static_ref_brand_idx").on(t.brandId)]
 );
+
+// =============================================
+// VIDEO GENERATION
+// Universal prompts (in code) — no per-brand config table. Per-brand Characters
+// & Scenes libraries feed A-Roll / UGC-with-character modes.
+// =============================================
+
+// Per-brand reusable talent references.
+export const videoCharacters = pgTable(
+  "video_characters",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    brandId: uuid("brand_id").notNull().references(() => brands.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    description: text("description"), // appearance / personality / voice style
+    imagePath: text("image_path").notNull(), // Supabase path (headshot/reference)
+    analysisJson: text("analysis_json"),
+    tags: text("tags"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("video_char_brand_idx").on(t.brandId)]
+);
+
+// Per-brand reusable scene/background references (podcast etc.).
+export const videoScenes = pgTable(
+  "video_scenes",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    brandId: uuid("brand_id").notNull().references(() => brands.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    description: text("description"),
+    imagePath: text("image_path").notNull(),
+    analysisJson: text("analysis_json"),
+    tags: text("tags"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("video_scene_brand_idx").on(t.brandId)]
+);
+
+// One row per generated video.
+export const videoGenerations = pgTable(
+  "video_generations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    brandId: uuid("brand_id").notNull().references(() => brands.id, { onDelete: "cascade" }),
+    productId: uuid("product_id").references(() => products.id, { onDelete: "set null" }),
+    characterId: uuid("character_id").references(() => videoCharacters.id, { onDelete: "set null" }),
+    sceneId: uuid("scene_id").references(() => videoScenes.id, { onDelete: "set null" }),
+    videoType: text("video_type").notNull().default("ugc"), // ugc | broll | aroll
+    arollStyle: text("aroll_style"), // street-interview | talking-head | podcast | green-screen
+    mode: text("mode").notNull().default("ugc"), // descriptive sub-mode (product_only | product_character | no_ref | ...)
+    status: text("status").notNull().default("pending"), // pending | generating | completed | error
+    kieModel: text("kie_model"),
+    kieJobId: text("kie_job_id"),
+    duration: integer("duration").notNull().default(10),
+    aspectRatio: text("aspect_ratio").notNull().default("9:16"),
+    resolution: text("resolution").notNull().default("720p"),
+    outputFormat: text("output_format").notNull().default("mp4"),
+    script: text("script"),
+    // pipeline intermediates (inspection)
+    crafterPrompt: text("crafter_prompt"),
+    studioFlowPrompt: text("studio_flow_prompt"),
+    finalPrompt: text("final_prompt"),
+    videoPath: text("video_path"), // stored mp4 (Supabase path)
+    thumbnailPath: text("thumbnail_path"),
+    batchId: uuid("batch_id"),
+    batchIndex: integer("batch_index").notNull().default(1),
+    batchSize: integer("batch_size").notNull().default(1),
+    sourceGenerationId: uuid("source_generation_id"),
+    attempts: integer("attempts").notNull().default(0),
+    errorMessage: text("error_message"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("video_gen_brand_status_idx").on(t.brandId, t.status),
+    index("video_gen_batch_idx").on(t.batchId),
+  ]
+);
