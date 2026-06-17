@@ -17,13 +17,18 @@ export async function POST(req: Request) {
   if (isAuthError(auth)) return auth;
   if (auth.profile.role === "viewer") return NextResponse.json({ error: "Insufficient permissions" }, { status: 403 });
 
-  const form = await req.formData().catch(() => null);
+  const form = await req.formData().catch((e) => {
+    console.warn("[static/logo] formData parse failed:", e);
+    return null;
+  });
   const brandId = form?.get("brandId");
-  const file = form?.get("file");
-  if (typeof brandId !== "string" || !brandId || !(file instanceof File)) {
+  const file = form?.get("file") as (Blob & { type?: string }) | null;
+  const isFile = !!file && typeof file.arrayBuffer === "function";
+  if (typeof brandId !== "string" || !brandId || !isFile) {
     return NextResponse.json({ error: "brandId + file required" }, { status: 400 });
   }
-  if (!file.type.startsWith("image/")) return NextResponse.json({ error: "image files only" }, { status: 400 });
+  const contentType = file.type || "image/png";
+  if (!contentType.startsWith("image/")) return NextResponse.json({ error: "image files only" }, { status: 400 });
   if (file.size > MAX_LOGO_BYTES) return NextResponse.json({ error: "logo too large (max 8MB)" }, { status: 400 });
 
   const [brand] = await db.select({ slug: schema.brands.slug }).from(schema.brands).where(eq(schema.brands.id, brandId)).limit(1);
@@ -31,8 +36,8 @@ export async function POST(req: Request) {
 
   await ensureStaticConfig(brandId);
   const buf = Buffer.from(await file.arrayBuffer());
-  const path = storagePath(brand.slug, KIND_BRAND, `logo.${extFromContentType(file.type)}`);
-  await uploadToStorage(path, buf, file.type);
+  const path = storagePath(brand.slug, KIND_BRAND, `logo.${extFromContentType(contentType)}`);
+  await uploadToStorage(path, buf, contentType);
   await db.update(schema.staticAdConfig).set({ brandLogoPath: path, updatedAt: new Date() }).where(eq(schema.staticAdConfig.brandId, brandId));
 
   return NextResponse.json({ logoUrl: await signedUrl(path) });

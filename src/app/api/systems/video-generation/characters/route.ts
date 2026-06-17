@@ -31,23 +31,31 @@ export async function POST(req: Request) {
   if (isAuthError(auth)) return auth;
   if (auth.profile.role === "viewer") return NextResponse.json({ error: "Insufficient permissions" }, { status: 403 });
 
-  const form = await req.formData().catch(() => null);
+  const form = await req.formData().catch((e) => {
+    console.warn("[video/characters] formData parse failed:", e);
+    return null;
+  });
   const brandId = form?.get("brandId");
-  const file = form?.get("file");
+  const file = form?.get("file") as (Blob & { name?: string; type?: string }) | null;
   const name = (form?.get("name") as string) || null;
   const description = (form?.get("description") as string) || null;
-  if (typeof brandId !== "string" || !brandId || !(file instanceof File)) {
+  // Duck-type the file (a Blob has arrayBuffer()) — `instanceof File` can be a
+  // false negative under Turbopack (cross-realm) which yields this 400.
+  const isFile = !!file && typeof file.arrayBuffer === "function";
+  if (typeof brandId !== "string" || !brandId || !isFile) {
+    console.warn("[video/characters] bad upload:", { hasForm: !!form, brandId: typeof brandId, file: file ? (file as { constructor?: { name?: string } }).constructor?.name : "missing" });
     return NextResponse.json({ error: "brandId + file required" }, { status: 400 });
   }
-  if (!file.type.startsWith("image/")) return NextResponse.json({ error: "image files only" }, { status: 400 });
+  const contentType = file.type || "image/png";
+  if (!contentType.startsWith("image/")) return NextResponse.json({ error: "image files only" }, { status: 400 });
   if (file.size > MAX_BYTES) return NextResponse.json({ error: "image too large (max 15MB)" }, { status: 400 });
 
   const [brand] = await db.select({ slug: schema.brands.slug }).from(schema.brands).where(eq(schema.brands.id, brandId)).limit(1);
   if (!brand) return NextResponse.json({ error: "Brand not found" }, { status: 404 });
 
   const buf = Buffer.from(await file.arrayBuffer());
-  const path = storagePath(brand.slug, KIND_CHARACTERS, `${randomUUID()}.${extFromContentType(file.type)}`);
-  await uploadToStorage(path, buf, file.type);
+  const path = storagePath(brand.slug, KIND_CHARACTERS, `${randomUUID()}.${extFromContentType(contentType)}`);
+  await uploadToStorage(path, buf, contentType);
 
   const [row] = await db
     .insert(schema.videoCharacters)
