@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { Loader2, Clapperboard, Check } from "lucide-react";
+import { Loader2, Clapperboard, Check, Image as ImageIcon } from "lucide-react";
 import { BentoCard } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -119,28 +119,18 @@ export function CreateTab({ brandId, generations, reload }: { brandId: string; g
 
         {showProduct && (
           <Field label="Product" hint="Uses the 9:16 image">
-            <div className="flex flex-wrap gap-2">
-              <ChipButton active={productId === null} onClick={() => setProductId(null)}>
-                No product
-              </ChipButton>
+            <div className="flex flex-wrap gap-2.5">
+              <SpecialTile active={productId === null} onClick={() => setProductId(null)} label="No product" ratio="aspect-[4/5]" />
               {products.map((p) => (
-                <button
+                <MediaTile
                   key={p.id}
+                  src={productMedia[p.id]?.video || productMedia[p.id]?.image || null}
+                  name={p.name}
+                  ratio="aspect-[4/5]"
+                  selected={productId === p.id}
                   onClick={() => setProductId(p.id)}
-                  className={cn(
-                    "flex items-center gap-2 rounded-xl border px-2 py-1.5 text-xs transition-colors",
-                    productId === p.id ? "border-primary/50 bg-primary/8 text-foreground" : "border-border/70 hover:border-border"
-                  )}
-                >
-                  <span className="size-7 shrink-0 overflow-hidden rounded-md bg-muted">
-                    {productMedia[p.id]?.video || productMedia[p.id]?.image ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={(productMedia[p.id].video || productMedia[p.id].image)!} alt="" className="size-full object-cover" />
-                    ) : null}
-                  </span>
-                  <span className="max-w-[120px] truncate">{p.name}</span>
-                  {p.isHero && <Badge variant="accent">Hero</Badge>}
-                </button>
+                  badge={p.isHero ? "Hero" : undefined}
+                />
               ))}
             </div>
           </Field>
@@ -151,27 +141,9 @@ export function CreateTab({ brandId, generations, reload }: { brandId: string; g
             {characters.length === 0 ? (
               <p className="text-xs text-muted-foreground">None yet — the agent will describe talent from your script.</p>
             ) : (
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap gap-2.5">
                 {characters.map((c) => (
-                  <button
-                    key={c.id}
-                    onClick={() => toggleCharacter(c.id)}
-                    className={cn(
-                      "relative size-14 overflow-hidden rounded-xl border bg-muted",
-                      characterIds.includes(c.id) ? "border-primary ring-2 ring-primary/30" : "border-border/70 hover:border-border"
-                    )}
-                    title={c.name}
-                  >
-                    {c.url ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={c.url} alt={c.name} className="size-full object-cover" />
-                    ) : null}
-                    {characterIds.includes(c.id) && (
-                      <span className="absolute right-1 top-1 flex size-4 items-center justify-center rounded-full bg-primary text-white">
-                        <Check className="size-3" />
-                      </span>
-                    )}
-                  </button>
+                  <MediaTile key={c.id} src={c.url} name={c.name} ratio="aspect-square" selected={characterIds.includes(c.id)} onClick={() => toggleCharacter(c.id)} />
                 ))}
               </div>
             )}
@@ -183,25 +155,10 @@ export function CreateTab({ brandId, generations, reload }: { brandId: string; g
             {scenes.length === 0 ? (
               <p className="text-xs text-muted-foreground">None yet — a studio scene will be invented.</p>
             ) : (
-              <div className="flex flex-wrap gap-2">
-                <ChipButton active={sceneId === null} onClick={() => setSceneId(null)}>
-                  Auto
-                </ChipButton>
+              <div className="flex flex-wrap gap-2.5">
+                <SpecialTile active={sceneId === null} onClick={() => setSceneId(null)} label="Auto" ratio="aspect-square" />
                 {scenes.map((s) => (
-                  <button
-                    key={s.id}
-                    onClick={() => setSceneId(s.id)}
-                    className={cn(
-                      "relative size-14 overflow-hidden rounded-xl border bg-muted",
-                      sceneId === s.id ? "border-primary ring-2 ring-primary/30" : "border-border/70 hover:border-border"
-                    )}
-                    title={s.name}
-                  >
-                    {s.url ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={s.url} alt={s.name} className="size-full object-cover" />
-                    ) : null}
-                  </button>
+                  <MediaTile key={s.id} src={s.url} name={s.name} ratio="aspect-square" selected={sceneId === s.id} onClick={() => setSceneId(s.id)} />
                 ))}
               </div>
             )}
@@ -301,6 +258,72 @@ export function ChipButton({ active, onClick, children }: { active: boolean; onC
       )}
     >
       {children}
+    </button>
+  );
+}
+
+/** Image-forward selectable tile for products / characters / scenes. */
+function MediaTile({
+  src,
+  name,
+  ratio,
+  selected,
+  onClick,
+  badge,
+}: {
+  src: string | null;
+  name: string;
+  ratio: string;
+  selected: boolean;
+  onClick: () => void;
+  badge?: string;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      title={name}
+      className={cn(
+        "relative w-[88px] overflow-hidden rounded-xl border text-left transition-all",
+        selected ? "border-primary ring-2 ring-primary/30" : "border-border/70 hover:-translate-y-0.5 hover:border-border"
+      )}
+    >
+      <div className={cn("w-full overflow-hidden bg-muted", ratio)}>
+        {src ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={src} alt="" loading="lazy" className="size-full object-cover" />
+        ) : (
+          <div className="flex size-full items-center justify-center text-muted-foreground/40">
+            <ImageIcon className="size-5" />
+          </div>
+        )}
+      </div>
+      {badge && (
+        <span className="absolute left-1 top-1">
+          <Badge variant="accent">{badge}</Badge>
+        </span>
+      )}
+      {selected && (
+        <span className="absolute right-1 top-1 flex size-4 items-center justify-center rounded-full bg-primary text-white">
+          <Check className="size-3" />
+        </span>
+      )}
+      <span className="block truncate px-2 py-1.5 text-[11px] font-medium">{name}</span>
+    </button>
+  );
+}
+
+/** Same-sized "No product" / "Auto" option tile. */
+function SpecialTile({ active, onClick, label, ratio }: { active: boolean; onClick: () => void; label: string; ratio: string }) {
+  return (
+    <button
+      onClick={onClick}
+      className={cn(
+        "flex w-[88px] flex-col items-center justify-center rounded-xl border border-dashed text-center text-xs font-medium transition-colors",
+        ratio,
+        active ? "border-primary/60 bg-primary/10 text-primary" : "border-border/70 text-muted-foreground hover:border-border hover:text-foreground"
+      )}
+    >
+      {label}
     </button>
   );
 }
