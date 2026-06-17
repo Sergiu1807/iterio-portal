@@ -51,7 +51,10 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
+  // Exclude /api: route handlers self-authenticate via requireAuth(), and
+  // running middleware on /api makes Next buffer + truncate request bodies at
+  // 10MB — which corrupts multipart uploads. Pages still get the session gate.
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
+    "/((?!api/|_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
   ],
 };
