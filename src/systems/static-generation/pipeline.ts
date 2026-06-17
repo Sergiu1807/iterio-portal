@@ -86,5 +86,23 @@ export async function composePrompt(opts: {
     systemKey: SYSTEM_KEY,
     brandId: opts.brandId,
   });
-  return textOf(resp).trim();
+  return stripMetadata(textOf(resp).trim());
+}
+
+/** Agent 2 emits "PART 1 prose\n\nPART 2 {metadata json}". Strip the trailing
+ *  JSON block so only the image prompt reaches the model. */
+function stripMetadata(text: string): string {
+  const idx = text.lastIndexOf("\n{");
+  if (idx > 40) {
+    const tail = text.slice(idx).trim();
+    if (tail.startsWith("{") && tail.endsWith("}")) {
+      try {
+        JSON.parse(tail);
+        return text.slice(0, idx).trim();
+      } catch {
+        /* not JSON — keep full text */
+      }
+    }
+  }
+  return text;
 }

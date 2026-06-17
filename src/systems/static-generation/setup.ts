@@ -7,7 +7,9 @@ import { fetchWebsiteText } from "@/lib/storage";
 import { SECTION_BLUEPRINT } from "@/lib/onboarding/draft";
 import { buildPlaceholderConfig } from "./placeholder-prompts";
 import { SYSTEM_KEY } from "./constants";
-import { brandDna, needsFill, INTEL_TOOL, INTEL_SYSTEM, PROMPTS_TOOL, authorSystemPrompt } from "./authoring";
+import { brandDna, needsFill, INTEL_TOOL, INTEL_SYSTEM } from "./authoring";
+import { researchBrandDna, studyProducts, inferBrandType } from "./research";
+import { renderAgent1, renderAgent2, renderBriefAgent1, renderBriefAgent2, buildColorSubstitutions, buildCatalog, buildVoiceRules } from "./templates";
 import type { Brand } from "@/lib/types";
 
 // ── config row ─────────────────────────────────────────────────────────────--
@@ -84,38 +86,44 @@ async function enrichIntel(brand: Brand, siteText: string | null): Promise<void>
   }
 }
 
-// ── author the two static-ad agent prompts ───────────────────────────────────
+// ── author the agent prompts (research slots → deterministic template fill) ────
+// Quality comes from the fixed master templates + researched slot values, not
+// from an LLM rewriting a prompt. Mirrors the proven client-portal builder.
 
-async function authorPrompts(brand: Brand, siteText: string | null): Promise<{
+export async function authorPrompts(brand: Brand, siteText: string | null, logoPath?: string | null): Promise<{
   agent1Prompt: string;
   agent2Prompt: string;
   briefAgent1Prompt: string;
   briefAgent2Prompt: string;
 }> {
-  const template = buildPlaceholderConfig({ brandName: brand.name, website: brand.website, brandColor: brand.brandColor });
-  const resp = await callClaude({
-    system: authorSystemPrompt(template),
-    messages: [
-      {
-        role: "user",
-        content: `Author the four prompts for this brand, grounded in its DNA:\n\n${brandDna(brand, siteText)}`,
-      },
-    ],
-    maxTokens: 8000,
-    timeoutMs: 240_000,
-    tools: [PROMPTS_TOOL],
-    toolChoice: { type: "tool", name: "emit_static_prompts" },
-    systemKey: SYSTEM_KEY,
-    brandId: brand.id,
-  });
+  const brandType = inferBrandType(brand);
+  const vertical = brand.category || "DTC consumer";
 
-  const out = toolResult<{ agent1Prompt: string; agent2Prompt: string; briefAgent1Prompt: string; briefAgent2Prompt: string }>(resp, "emit_static_prompts");
-  if (!out?.agent1Prompt || !out?.agent2Prompt) throw new Error("Agent prompt authoring returned empty output");
+  const [dna, studies] = await Promise.all([researchBrandDna(brand, siteText, logoPath), studyProducts(brand)]);
+
+  const constraints = brand.sections.find((s) => s.sectionType === "constraints")?.content ?? undefined;
+  const slots = {
+    brandName: brand.name,
+    brandType,
+    visualLanguageModifier: dna.visualLanguageModifier,
+    colorSubstitutions: buildColorSubstitutions(brand.palette, dna.hexPalette, dna.fonts),
+    catalog: buildCatalog(studies),
+    voiceRules: buildVoiceRules({
+      voiceKeywords: dna.voiceKeywords,
+      emotionalKeywords: dna.emotionalKeywords,
+      proofPoints: dna.proofPoints,
+      usps: brand.usps.map((u) => u.text),
+      dos: dna.dos,
+      donts: dna.donts,
+      constraints,
+    }),
+  };
+
   return {
-    agent1Prompt: out.agent1Prompt,
-    agent2Prompt: out.agent2Prompt,
-    briefAgent1Prompt: out.briefAgent1Prompt || template.briefAgent1Prompt,
-    briefAgent2Prompt: out.briefAgent2Prompt || template.briefAgent2Prompt,
+    agent1Prompt: renderAgent1({ vertical, brandType }),
+    agent2Prompt: renderAgent2(slots),
+    briefAgent1Prompt: renderBriefAgent1({ vertical, brandType }),
+    briefAgent2Prompt: renderBriefAgent2(slots),
   };
 }
 
@@ -151,7 +159,8 @@ export async function runStaticSetup(brandId: string): Promise<void> {
 
     // Re-read so authored prompts use the freshly-enriched intel.
     const enriched = (await getBrandById(brandId)) ?? brand;
-    const prompts = await authorPrompts(enriched, siteText);
+    const [cfg] = await db.select({ brandLogoPath: schema.staticAdConfig.brandLogoPath }).from(schema.staticAdConfig).where(eq(schema.staticAdConfig.brandId, brandId)).limit(1);
+    const prompts = await authorPrompts(enriched, siteText, cfg?.brandLogoPath);
 
     await db
       .update(schema.staticAdConfig)
