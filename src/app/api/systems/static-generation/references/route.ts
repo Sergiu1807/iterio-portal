@@ -9,7 +9,7 @@ import { KIND_REFERENCES } from "@/systems/static-generation/constants";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-const MAX_REF_BYTES = 15 * 1024 * 1024;
+const MAX_REF_BYTES = 50 * 1024 * 1024;
 
 /** The brand's reference-image library, with signed URLs. */
 export async function GET(req: Request) {
@@ -49,7 +49,7 @@ export async function POST(req: Request) {
   }
   const contentType = file.type || "image/png";
   if (!contentType.startsWith("image/")) return NextResponse.json({ error: "image files only" }, { status: 400 });
-  if (file.size > MAX_REF_BYTES) return NextResponse.json({ error: "image too large (max 15MB)" }, { status: 400 });
+  if (file.size > MAX_REF_BYTES) return NextResponse.json({ error: "image too large (max 50MB)" }, { status: 400 });
 
   const [brand] = await db.select({ slug: schema.brands.slug }).from(schema.brands).where(eq(schema.brands.id, brandId)).limit(1);
   if (!brand) return NextResponse.json({ error: "Brand not found" }, { status: 404 });
