@@ -13,6 +13,8 @@ export type CallClaudeParams = {
   temperature?: number;
   tools?: Anthropic.Tool[];
   toolChoice?: Anthropic.MessageCreateParams["tool_choice"];
+  /** Per-request timeout (ms). Raise for long, high-max_tokens generations. */
+  timeoutMs?: number;
   // metering context
   systemKey?: string;
   brandId?: string;
@@ -24,7 +26,7 @@ export async function callClaude(params: CallClaudeParams): Promise<Anthropic.Me
   if (!apiKey) throw new Error("ANTHROPIC_API_KEY is not configured");
   // Extra retries/timeout headroom so transient blips are absorbed by the SDK's
   // exponential backoff before they ever count against the pipeline's attempt budget.
-  const client = new Anthropic({ apiKey, maxRetries: 4, timeout: 60_000 });
+  const client = new Anthropic({ apiKey, maxRetries: 4, timeout: params.timeoutMs ?? 60_000 });
   const model = params.model ?? DEFAULT_CLAUDE_MODEL;
 
   const resp = await client.messages.create({
