@@ -12,7 +12,6 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { useBrand } from "@/lib/brand-store";
 import { cn } from "@/lib/utils";
 import { CreateTab } from "./create-tab";
-import { BriefTab } from "./brief-tab";
 import { GalleryTab } from "./gallery-tab";
 import { LibraryTab } from "./library-tab";
 import { GenActions } from "./result-tile";
@@ -207,17 +206,13 @@ function StaticWorkspace({
       <Tabs defaultValue="create">
         <TabsList className="flex-wrap">
           <TabsTrigger value="create">Create</TabsTrigger>
-          <TabsTrigger value="brief">Brief</TabsTrigger>
           <TabsTrigger value="gallery">Gallery ({generations.length})</TabsTrigger>
           <TabsTrigger value="library">Library</TabsTrigger>
           <TabsTrigger value="settings">Settings</TabsTrigger>
         </TabsList>
 
         <TabsContent value="create">
-          <CreateTab brandId={brandId} generations={generations} reload={loadGenerations} renderActions={renderActions} />
-        </TabsContent>
-        <TabsContent value="brief">
-          <BriefTab brandId={brandId} hasLogo={config.hasLogo} generations={generations} reload={loadGenerations} renderActions={renderActions} />
+          <CreateTab brandId={brandId} hasLogo={config.hasLogo} generations={generations} reload={loadGenerations} renderActions={renderActions} />
         </TabsContent>
         <TabsContent value="gallery">
           <GalleryTab generations={generations} reload={loadGenerations} renderActions={renderActions} />

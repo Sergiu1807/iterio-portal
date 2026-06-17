@@ -145,15 +145,18 @@ export async function startGeneration(opts: {
   return { batchId, ids };
 }
 
-/** Brief mode: Agent 1 reads the brief (+ logo) → Agent 2 per (ratio×variation) → Nano Banana. */
+/** Brief mode: Agent 1 reads the brief (+ logo) → Agent 2 per (ratio×variation) → Nano Banana.
+ *  An optional product is featured (its image is attached + described). */
 export async function startBriefGeneration(opts: {
   brandId: string;
   briefText: string;
+  productId?: string | null;
   aspectRatios: string[];
   variationCount: number;
   resolution: string;
 }): Promise<{ batchId: string; ids: string[] }> {
   const config = await loadConfig(opts.brandId);
+  const product = await loadProduct(opts.brandId, opts.productId);
   const ratios = (opts.aspectRatios.length ? opts.aspectRatios : ["1:1"]).slice(0, 4);
   const variations = clamp(opts.variationCount, 1, MAX_VARIATIONS);
 
@@ -164,11 +167,12 @@ export async function startBriefGeneration(opts: {
 
   const cells = ratios.flatMap((ratio) => Array.from({ length: variations }, () => ({ ratio })));
   const prompts = await Promise.all(
-    cells.map((c) => composePrompt({ analysisJson, agent2Prompt: a2, aspectRatio: c.ratio, brandId: opts.brandId, product: null, adCopy: null }))
+    cells.map((c) => composePrompt({ analysisJson, agent2Prompt: a2, aspectRatio: c.ratio, brandId: opts.brandId, product, adCopy: null }))
   );
 
+  const productUrl = product?.imagePath ? await signedUrl(product.imagePath, KIE_INPUT_EXPIRY) : null;
   const logoUrl = config.brandLogoPath ? await signedUrl(config.brandLogoPath, KIE_INPUT_EXPIRY) : null;
-  const inputUrls = [logoUrl].filter(Boolean) as string[];
+  const inputUrls = [productUrl, logoUrl].filter(Boolean) as string[];
 
   const batchId = randomUUID();
   const batchSize = cells.length;
@@ -177,7 +181,7 @@ export async function startBriefGeneration(opts: {
     ids.push(
       await submitCell({
         brandId: opts.brandId,
-        productId: null,
+        productId: opts.productId ?? null,
         mode: "brief",
         aspectRatio: cells[i].ratio,
         resolution: opts.resolution,

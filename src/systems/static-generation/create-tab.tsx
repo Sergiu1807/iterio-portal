@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { Loader2, Upload, Sparkles, Check, ImagePlus } from "lucide-react";
+import { Loader2, Sparkles, Check, ImagePlus } from "lucide-react";
 import { BentoCard } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -14,14 +14,17 @@ import type { Generation, ReferenceItem } from "./ui-types";
 import { GenTile } from "./result-tile";
 
 type ProductMedia = Record<string, { image: string | null; video: string | null }>;
+type Mode = "reference" | "brief";
 
 export function CreateTab({
   brandId,
+  hasLogo,
   generations,
   reload,
   renderActions,
 }: {
   brandId: string;
+  hasLogo: boolean;
   generations: Generation[];
   reload: () => void;
   renderActions?: (gen: Generation) => React.ReactNode;
@@ -31,9 +34,11 @@ export function CreateTab({
 
   const [productMedia, setProductMedia] = useState<ProductMedia>({});
   const [references, setReferences] = useState<ReferenceItem[]>([]);
+  const [mode, setMode] = useState<Mode>("reference");
   const [productId, setProductId] = useState<string | null>(null);
   const [refPath, setRefPath] = useState<string | null>(null);
   const [adCopy, setAdCopy] = useState("");
+  const [brief, setBrief] = useState("");
   const [ratios, setRatios] = useState<string[]>(["1:1"]);
   const [variations, setVariations] = useState(2);
   const [resolution, setResolution] = useState<string>(DEFAULT_RESOLUTION);
@@ -75,19 +80,20 @@ export function CreateTab({
   const toggleRatio = (r: string) => setRatios((prev) => (prev.includes(r) ? prev.filter((x) => x !== r) : [...prev, r]));
 
   const generate = async () => {
-    if (!refPath) return toast.error("Pick or upload a reference image");
+    if (mode === "reference" && !refPath) return toast.error("Pick or upload a reference image");
+    if (mode === "brief" && !brief.trim()) return toast.error("Write a creative brief");
     if (!ratios.length) return toast.error("Pick at least one format");
     setRunning(true);
-    const res = await fetch(`/api/systems/static-generation/generate`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ brandId, referencePath: refPath, productId, adCopy: adCopy.trim() || null, aspectRatios: ratios, variationCount: variations, resolution }),
-    });
+    const url = mode === "reference" ? `/api/systems/static-generation/generate` : `/api/systems/static-generation/generate/brief`;
+    const body =
+      mode === "reference"
+        ? { brandId, referencePath: refPath, productId, adCopy: adCopy.trim() || null, aspectRatios: ratios, variationCount: variations, resolution }
+        : { brandId, briefText: brief, productId, aspectRatios: ratios, variationCount: variations, resolution };
+    const res = await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
     setRunning(false);
     if (res.ok) {
-      const { batchId } = (await res.json()) as { batchId: string };
-      setLastBatchId(batchId);
-      toast.success("Generating — images stream in below.");
+      setLastBatchId(((await res.json()) as { batchId: string }).batchId);
+      toast.success(mode === "reference" ? "Generating — images stream in below." : "Generating from your brief…");
       reload();
     } else {
       toast.error(((await res.json().catch(() => ({}))) as { error?: string })?.error ?? "Couldn't start generation");
@@ -98,6 +104,8 @@ export function CreateTab({
     () => (lastBatchId ? generations.filter((g) => g.batchId === lastBatchId).sort((a, b) => a.batchIndex - b.batchIndex) : []),
     [generations, lastBatchId]
   );
+
+  const canGenerate = mode === "reference" ? !!refPath : !!brief.trim();
 
   return (
     <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,360px)_1fr]">
@@ -131,55 +139,84 @@ export function CreateTab({
           </div>
         </Field>
 
-        {/* reference */}
-        <Field label="Reference image" hint="Style/composition to follow — required">
-          <div className="flex flex-wrap gap-2">
-            {references.map((ref) => (
-              <button
-                key={ref.id}
-                onClick={() => setRefPath(ref.imagePath)}
-                className={cn(
-                  "relative size-16 overflow-hidden rounded-xl border bg-muted",
-                  refPath === ref.imagePath ? "border-primary ring-2 ring-primary/30" : "border-border/70 hover:border-border"
-                )}
-              >
-                {ref.url ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={ref.url} alt={ref.name ?? ""} className="size-full object-cover" />
-                ) : null}
-                {refPath === ref.imagePath && (
-                  <span className="absolute right-1 top-1 flex size-4 items-center justify-center rounded-full bg-primary text-white">
-                    <Check className="size-3" />
-                  </span>
-                )}
-              </button>
-            ))}
-            <button
-              onClick={() => fileRef.current?.click()}
-              disabled={uploading}
-              className="flex size-16 flex-col items-center justify-center gap-1 rounded-xl border border-dashed border-border text-muted-foreground hover:border-border hover:text-foreground"
-            >
-              {uploading ? <Loader2 className="size-4 animate-spin" /> : <ImagePlus className="size-4" />}
-              <span className="text-[10px]">Upload</span>
-            </button>
-            <input
-              ref={fileRef}
-              type="file"
-              accept="image/*"
-              className="hidden"
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                if (f) uploadRef(f);
-                e.target.value = "";
-              }}
-            />
+        {/* source mode toggle */}
+        <Field label="Source">
+          <div className="flex w-full rounded-xl border border-border/70 p-1">
+            <ToggleButton active={mode === "reference"} onClick={() => setMode("reference")}>
+              Reference
+            </ToggleButton>
+            <ToggleButton active={mode === "brief"} onClick={() => setMode("brief")}>
+              Brief
+            </ToggleButton>
           </div>
         </Field>
 
-        {/* ad copy */}
-        <Field label="Ad copy" hint="Optional — leave blank to let the agent write it">
-          <Textarea value={adCopy} onChange={(e) => setAdCopy(e.target.value)} placeholder="Headline, offer, CTA…" className="min-h-[72px]" />
-        </Field>
+        {mode === "reference" ? (
+          <>
+            {/* reference */}
+            <Field label="Reference image" hint="Style/composition to follow — required">
+              <div className="flex flex-wrap gap-2">
+                {references.map((ref) => (
+                  <button
+                    key={ref.id}
+                    onClick={() => setRefPath(ref.imagePath)}
+                    className={cn(
+                      "relative size-16 overflow-hidden rounded-xl border bg-muted",
+                      refPath === ref.imagePath ? "border-primary ring-2 ring-primary/30" : "border-border/70 hover:border-border"
+                    )}
+                  >
+                    {ref.url ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={ref.url} alt={ref.name ?? ""} className="size-full object-cover" />
+                    ) : null}
+                    {refPath === ref.imagePath && (
+                      <span className="absolute right-1 top-1 flex size-4 items-center justify-center rounded-full bg-primary text-white">
+                        <Check className="size-3" />
+                      </span>
+                    )}
+                  </button>
+                ))}
+                <button
+                  onClick={() => fileRef.current?.click()}
+                  disabled={uploading}
+                  className="flex size-16 flex-col items-center justify-center gap-1 rounded-xl border border-dashed border-border text-muted-foreground hover:border-border hover:text-foreground"
+                >
+                  {uploading ? <Loader2 className="size-4 animate-spin" /> : <ImagePlus className="size-4" />}
+                  <span className="text-[10px]">Upload</span>
+                </button>
+                <input
+                  ref={fileRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) uploadRef(f);
+                    e.target.value = "";
+                  }}
+                />
+              </div>
+            </Field>
+
+            {/* ad copy */}
+            <Field label="Ad copy" hint="Optional — leave blank to let the agent write it">
+              <Textarea value={adCopy} onChange={(e) => setAdCopy(e.target.value)} placeholder="Headline, offer, CTA…" className="min-h-[72px]" />
+            </Field>
+          </>
+        ) : (
+          <>
+            {/* creative brief */}
+            <Field label="Creative brief" hint="Describe the ad — concept, message, offer">
+              <Textarea
+                value={brief}
+                onChange={(e) => setBrief(e.target.value)}
+                placeholder="A clean, editorial launch ad for our hero product. Lead with the core benefit, one bold headline, a soft product hero shot, and a Shop now CTA…"
+                className="min-h-[180px]"
+              />
+            </Field>
+            {!hasLogo && <p className="-mt-2 text-[11px] text-muted-foreground">Tip: upload a brand logo in Settings — Brief ads render it onto the canvas.</p>}
+          </>
+        )}
 
         {/* formats */}
         <Field label="Formats">
@@ -214,7 +251,7 @@ export function CreateTab({
           </Field>
         </div>
 
-        <Button onClick={generate} disabled={running || !refPath} className="w-full">
+        <Button onClick={generate} disabled={running || !canGenerate} className="w-full">
           {running ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />} Generate{" "}
           {ratios.length * variations > 1 ? `(${ratios.length * variations})` : ""}
         </Button>
@@ -224,7 +261,11 @@ export function CreateTab({
       <div>
         {batchTiles.length === 0 ? (
           <div className="flex h-full min-h-[280px] items-center justify-center rounded-[var(--radius)] border border-dashed border-border text-center text-sm text-muted-foreground">
-            <p className="max-w-xs">Pick a product, choose a reference, and hit Generate. Results appear here.</p>
+            <p className="max-w-xs">
+              {mode === "reference"
+                ? "Pick a product, choose a reference, and hit Generate. Results appear here."
+                : "Pick a product (optional), write a brief, and hit Generate. Results appear here."}
+            </p>
           </div>
         ) : (
           <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
@@ -257,6 +298,20 @@ export function ChipButton({ active, onClick, children }: { active: boolean; onC
       className={cn(
         "rounded-xl border px-3 py-1.5 text-xs font-medium transition-colors",
         active ? "border-primary/50 bg-primary/10 text-primary" : "border-border/70 text-muted-foreground hover:border-border hover:text-foreground"
+      )}
+    >
+      {children}
+    </button>
+  );
+}
+
+function ToggleButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      onClick={onClick}
+      className={cn(
+        "flex-1 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors",
+        active ? "bg-primary/12 text-primary" : "text-muted-foreground hover:text-foreground"
       )}
     >
       {children}

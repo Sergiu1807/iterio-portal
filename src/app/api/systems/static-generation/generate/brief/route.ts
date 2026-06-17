@@ -13,6 +13,7 @@ export async function POST(req: Request) {
   const body = (await req.json().catch(() => ({}))) as {
     brandId?: string;
     briefText?: string;
+    productId?: string | null;
     aspectRatios?: string[];
     variationCount?: number;
     resolution?: string;
@@ -25,6 +26,7 @@ export async function POST(req: Request) {
     const out = await startBriefGeneration({
       brandId: body.brandId,
       briefText: body.briefText,
+      productId: body.productId ?? null,
       aspectRatios: body.aspectRatios ?? ["1:1"],
       variationCount: body.variationCount ?? 1,
       resolution: body.resolution ?? "2K",
