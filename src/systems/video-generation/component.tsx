@@ -1,13 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Loader2, Wand2, Film } from "lucide-react";
+import { Loader2, Wand2, Film, Users, Mountain } from "lucide-react";
 import { BentoCard } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { useBrand } from "@/lib/brand-store";
 import { CreateTab } from "./create-tab";
 import { GalleryTab } from "./gallery-tab";
+import { RefLibrary } from "./ref-library";
 import { isActive } from "./ui-utils";
 import type { VideoGen } from "./ui-types";
 
@@ -70,6 +71,8 @@ export default function VideoGenerationSystem({ brandId }: { brandId: string }) 
             <TabsList className="flex-wrap">
               <TabsTrigger value="create"><Wand2 className="size-3.5" /> Create</TabsTrigger>
               <TabsTrigger value="gallery"><Film className="size-3.5" /> Gallery ({generations.length})</TabsTrigger>
+              <TabsTrigger value="characters"><Users className="size-3.5" /> Characters</TabsTrigger>
+              <TabsTrigger value="scenes"><Mountain className="size-3.5" /> Scenes</TabsTrigger>
             </TabsList>
           </div>
         </div>
@@ -80,6 +83,12 @@ export default function VideoGenerationSystem({ brandId }: { brandId: string }) 
       </TabsContent>
       <TabsContent value="gallery" className="mt-0">
         <GalleryTab generations={generations} reload={loadGenerations} />
+      </TabsContent>
+      <TabsContent value="characters" className="mt-0">
+        <RefLibrary brandId={brandId} kind="characters" />
+      </TabsContent>
+      <TabsContent value="scenes" className="mt-0">
+        <RefLibrary brandId={brandId} kind="scenes" />
       </TabsContent>
     </Tabs>
   );
