@@ -15,6 +15,17 @@ export async function POST(req: Request) {
   if (b.videoType === "ugc" && !b.productId && !(b.script && b.script.trim())) {
     return NextResponse.json({ error: "UGC needs a product or a script" }, { status: 400 });
   }
+  // B-Roll is a product-hero format — it needs a product to render.
+  if (b.videoType === "broll" && !b.productId) {
+    return NextResponse.json({ error: "B-Roll needs a product" }, { status: 400 });
+  }
+  // Guard the Kie Seedance 2 param sets so an unsupported value never reaches Kie.
+  const VALID_ASPECT = new Set(["1:1", "4:3", "3:4", "16:9", "9:16", "21:9"]);
+  const VALID_RES = new Set(["480p", "720p", "1080p"]);
+  const VALID_DUR = new Set([5, 10, 15]);
+  if (b.aspectRatio && !VALID_ASPECT.has(b.aspectRatio)) return NextResponse.json({ error: `Unsupported aspect ratio: ${b.aspectRatio}` }, { status: 400 });
+  if (b.resolution && !VALID_RES.has(b.resolution)) return NextResponse.json({ error: `Unsupported resolution: ${b.resolution}` }, { status: 400 });
+  if (b.duration && !VALID_DUR.has(b.duration)) return NextResponse.json({ error: `Unsupported duration: ${b.duration}` }, { status: 400 });
 
   const opts: VideoGenOpts = {
     brandId: b.brandId,

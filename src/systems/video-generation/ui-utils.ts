@@ -1,7 +1,7 @@
 import type { VideoGen } from "./ui-types";
 import { AROLL_STYLES } from "./constants";
 
-export const ACTIVE_STATUSES = ["pending", "generating"];
+export const ACTIVE_STATUSES = ["pending", "submitting", "generating"];
 
 export function isActive(g: VideoGen): boolean {
   return ACTIVE_STATUSES.includes(g.status);
@@ -26,6 +26,8 @@ export function statusLabel(status: string): string {
   switch (status) {
     case "pending":
       return "Queued";
+    case "submitting":
+      return "Submitting";
     case "generating":
       return "Rendering";
     case "completed":

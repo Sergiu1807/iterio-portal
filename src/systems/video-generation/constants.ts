@@ -18,7 +18,8 @@ export const AROLL_STYLES = [
 export const DURATIONS = [5, 10, 15] as const;
 export const DEFAULT_DURATION = 10;
 
-export const VIDEO_ASPECT_RATIOS = ["9:16", "16:9", "1:1", "4:5", "4:3"] as const;
+// Kie Seedance 2 supported aspect ratios (4:5 is NOT supported — use 3:4).
+export const VIDEO_ASPECT_RATIOS = ["9:16", "3:4", "1:1", "4:3", "16:9"] as const;
 export const DEFAULT_ASPECT = "9:16";
 
 export const RESOLUTIONS = ["480p", "720p", "1080p"] as const;

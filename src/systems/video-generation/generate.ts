@@ -114,6 +114,9 @@ export async function runVideoBatch(batchId: string, opts: VideoGenOpts): Promis
     const hasCharacter = characters.length > 0;
     const isAroll = opts.videoType === "aroll";
     const isNoRefUGC = opts.videoType === "ugc" && !hasProduct && !hasCharacter;
+    // Recompute mode from what actually loaded (product may be missing/not owned),
+    // so the stored label matches the template the pipeline really used.
+    const mode = computeMode(opts.videoType, opts.arollStyle, hasProduct, hasCharacter);
 
     // ── universal prompt pipeline (Claude) ──
     const crafter = await craftPromptAgent({
@@ -163,14 +166,25 @@ export async function runVideoBatch(batchId: string, opts: VideoGenOpts): Promis
       ])
     ).filter(Boolean) as string[];
 
-    // ── submit one Seedance job per row ──
-    const rows = await db.select({ id: schema.videoGenerations.id }).from(schema.videoGenerations).where(eq(schema.videoGenerations.batchId, batchId));
+    // ── submit one Seedance job per row (idempotent: claim pending→submitting
+    //    with a guarded UPDATE so a retried after() can never double-charge) ──
+    const rows = await db
+      .select({ id: schema.videoGenerations.id })
+      .from(schema.videoGenerations)
+      .where(and(eq(schema.videoGenerations.batchId, batchId), eq(schema.videoGenerations.status, "pending")));
     for (const row of rows) {
+      // Claim the row: only one runner can flip pending→submitting.
+      const claimed = await db
+        .update(schema.videoGenerations)
+        .set({ status: "submitting", mode, crafterPrompt: crafter, studioFlowPrompt: studioFlow, finalPrompt: promptForSeedance, updatedAt: new Date() })
+        .where(and(eq(schema.videoGenerations.id, row.id), eq(schema.videoGenerations.status, "pending")))
+        .returning({ id: schema.videoGenerations.id });
+      if (!claimed.length) continue; // already claimed by another invocation
       try {
         const taskId = await submitVideoJob({ prompt: promptForSeedance, imageUrls: inputUrls, aspectRatio: ar, duration: dur, resolution: opts.resolution });
         await db
           .update(schema.videoGenerations)
-          .set({ status: "generating", kieJobId: taskId, attempts: 1, crafterPrompt: crafter, studioFlowPrompt: studioFlow, finalPrompt: promptForSeedance, updatedAt: new Date() })
+          .set({ status: "generating", kieJobId: taskId, attempts: 1, updatedAt: new Date() })
           .where(eq(schema.videoGenerations.id, row.id));
       } catch (e) {
         await db

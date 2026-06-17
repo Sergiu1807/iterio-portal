@@ -30,7 +30,9 @@ export async function GET(req: Request) {
       duration: r.duration,
       aspectRatio: r.aspectRatio,
       resolution: r.resolution,
-      videoUrl: await signedUrl(r.videoPath),
+      // videoPath is normally a storage path (sign it); on the fallback path it's
+      // a raw Kie URL already (serve as-is).
+      videoUrl: r.videoPath?.startsWith("http") ? r.videoPath : await signedUrl(r.videoPath),
       thumbUrl: await signedUrl(r.thumbnailPath),
       errorMessage: r.errorMessage,
       finalPrompt: r.finalPrompt,

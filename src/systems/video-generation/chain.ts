@@ -38,24 +38,39 @@ export async function advanceVideoGeneration(row: GenRow, slug: string): Promise
     await fail(row.id, poll.errorMessage ?? "Video generation failed");
     return;
   }
+  // Kie reported success but returned no URL — a known edge; fail fast (don't stall to the 20-min timeout).
+  if (poll.state === "success" && !poll.videoUrl) {
+    await fail(row.id, "Completed but no video URL returned");
+    return;
+  }
   if (poll.state !== "success" || !poll.videoUrl) {
     if (isStuck(row)) await fail(row.id, "Generation timed out");
     return;
   }
 
-  const media = await fetchExternalMedia(poll.videoUrl, { maxBytes: MAX_RESULT_BYTES, timeoutMs: 60_000 });
-  if (!media) {
-    if (isStuck(row)) await fail(row.id, "Could not fetch generated video");
-    return;
+  // The credit is already spent — make sure we ALWAYS land a playable video.
+  // Prefer copying into our storage; if the fetch/upload fails, keep Kie's URL
+  // (it's valid for a while) rather than losing the result at the stuck timeout.
+  let videoPath = poll.videoUrl;
+  let outputFormat = "mp4";
+  const media = await fetchExternalMedia(poll.videoUrl, { maxBytes: MAX_RESULT_BYTES, timeoutMs: 120_000 });
+  if (media) {
+    try {
+      const ext = extFromContentType(media.contentType); // mp4 supported
+      const path = storagePath(slug, KIND_VIDEOS, `${row.id}.${ext}`);
+      await uploadToStorage(path, media.buffer, media.contentType);
+      videoPath = path;
+      outputFormat = ext;
+    } catch (e) {
+      console.warn("[video-chain] store failed, keeping Kie URL", row.id, e);
+    }
+  } else {
+    console.warn("[video-chain] fetch failed, keeping Kie URL", row.id);
   }
-
-  const ext = extFromContentType(media.contentType); // mp4 supported
-  const path = storagePath(slug, KIND_VIDEOS, `${row.id}.${ext}`);
-  await uploadToStorage(path, media.buffer, media.contentType);
 
   const done = await db
     .update(schema.videoGenerations)
-    .set({ status: "completed", videoPath: path, outputFormat: ext, updatedAt: new Date() })
+    .set({ status: "completed", videoPath, outputFormat, updatedAt: new Date() })
     .where(and(eq(schema.videoGenerations.id, row.id), eq(schema.videoGenerations.status, "generating")))
     .returning({ id: schema.videoGenerations.id });
 
