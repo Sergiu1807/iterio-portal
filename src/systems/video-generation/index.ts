@@ -1,3 +1,4 @@
+import { lazy } from "react";
 import { Clapperboard } from "lucide-react";
 import type { SystemDefinition } from "../types";
 
@@ -14,14 +15,14 @@ export const videoGeneration: SystemDefinition = {
     "Characters & scenes libraries",
     "Live generation progress tracker",
   ],
-  status: "placeholder",
+  status: "live",
   nav: { group: "create", order: 30 },
   infra: [
     { kind: "apiKey", keyName: "ANTHROPIC_API_KEY", label: "Anthropic Claude" },
-    { kind: "service", keyName: "OPENAI_API_KEY", label: "OpenAI" },
     { kind: "service", keyName: "KIE_AI_API_KEY", label: "Kie AI (Seedance video)" },
   ],
   perBrand: true,
   enabledByDefault: false,
   accent: "#6E5A86",
+  Component: lazy(() => import("./component")),
 };
