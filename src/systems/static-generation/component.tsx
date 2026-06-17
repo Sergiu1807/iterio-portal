@@ -308,8 +308,12 @@ function SettingsPanel({
             {rebuilding ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />} Rebuild prompts
           </Button>
         </div>
+        <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground/70">Create mode (reference → ad)</p>
         <PromptEditor brandId={brandId} label="Agent 1 — reference analyzer (vision → JSON)" field="agent1Prompt" value={config.agent1Prompt} reload={reload} />
         <PromptEditor brandId={brandId} label="Agent 2 — composer (→ image prompt)" field="agent2Prompt" value={config.agent2Prompt} reload={reload} />
+        <p className="pt-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground/70">Brief mode (text brief → ad)</p>
+        <PromptEditor brandId={brandId} label="Brief Agent 1 — brief analyzer (→ JSON)" field="briefAgent1Prompt" value={config.briefAgent1Prompt ?? ""} reload={reload} />
+        <PromptEditor brandId={brandId} label="Brief Agent 2 — composer (→ image prompt)" field="briefAgent2Prompt" value={config.briefAgent2Prompt ?? ""} reload={reload} />
       </div>
     </div>
   );
@@ -387,7 +391,7 @@ function PromptEditor({
 }: {
   brandId: string;
   label: string;
-  field: "agent1Prompt" | "agent2Prompt";
+  field: "agent1Prompt" | "agent2Prompt" | "briefAgent1Prompt" | "briefAgent2Prompt";
   value: string;
   reload: () => void;
 }) {
