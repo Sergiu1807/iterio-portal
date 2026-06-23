@@ -10,10 +10,10 @@ export const competitorResearch: SystemDefinition = {
   description:
     "Track competitors on Meta — scraping their live ads, owning the media, clustering variants into concepts, ranking each by a composite Winner Score, and breaking the winners down into a structured Angle Bank. Runs entirely in code (Apify + Gemini + Claude), no n8n.",
   capabilities: [
+    "One-brand competitor auto-discovery (Tavily)",
     "Meta Ad Library scraper (URL, page-id or keyword)",
     "Variant clustering + composite Winner Score & tiers",
-    "Structured Angle Bank teardown per concept",
-    "Winner Board + swipe library",
+    "Structured Angle Bank teardown + Winner Board + swipe library",
   ],
   status: "live",
   nav: { group: "research", order: 10 },

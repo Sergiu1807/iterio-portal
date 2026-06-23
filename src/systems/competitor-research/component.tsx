@@ -197,7 +197,18 @@ export default function CompetitorResearchSystem({ brandId }: { brandId: string 
         </TabsContent>
 
         <TabsContent value="competitors">
-          <CompetitorsTab brandId={brandId} sources={sources} reload={loadSources} onRefresh={refreshSource} count={count} setCount={setCount} />
+          <CompetitorsTab
+            brandId={brandId}
+            sources={sources}
+            reload={loadSources}
+            onRefresh={refreshSource}
+            onDiscovered={() => {
+              loadSources();
+              load();
+            }}
+            count={count}
+            setCount={setCount}
+          />
         </TabsContent>
       </Tabs>
 

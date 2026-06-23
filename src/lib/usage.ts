@@ -43,7 +43,7 @@ export function computeVideoCost(model: string, duration = 10): number {
   return m?.[duration] ?? m?.[10] ?? 0.5;
 }
 
-export type UsageProvider = "anthropic" | "gemini" | "apify" | "kie";
+export type UsageProvider = "anthropic" | "gemini" | "apify" | "kie" | "tavily";
 
 export type UsageEvent = {
   provider: UsageProvider;

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { toast } from "sonner";
-import { Plus, Play, Trash2, ExternalLink, Building2 } from "lucide-react";
+import { Plus, Play, Trash2, ExternalLink, Building2, Sparkles, Loader2, Radar } from "lucide-react";
 import { BentoCard } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -17,6 +17,7 @@ export function CompetitorsTab({
   sources,
   reload,
   onRefresh,
+  onDiscovered,
   count,
   setCount,
 }: {
@@ -24,6 +25,7 @@ export function CompetitorsTab({
   sources: Source[];
   reload: () => void;
   onRefresh: (source: Source) => void;
+  onDiscovered: () => void;
   count: number;
   setCount: (n: number) => void;
 }) {
@@ -32,6 +34,30 @@ export function CompetitorsTab({
   const [url, setUrl] = useState("");
   const [country, setCountry] = useState("ALL");
   const [saving, setSaving] = useState(false);
+
+  const [discInput, setDiscInput] = useState("");
+  const [discovering, setDiscovering] = useState(false);
+
+  const discover = async () => {
+    if (!discInput.trim()) return;
+    setDiscovering(true);
+    const res = await fetch("/api/systems/competitor-research/discover", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ brandId, input: discInput.trim(), count }),
+    });
+    const data = await res.json().catch(() => ({}));
+    setDiscovering(false);
+    if (res.ok) {
+      toast.success(`Found ${data.jobsStarted} competitor${data.jobsStarted === 1 ? "" : "s"}${data.niche ? ` in ${data.niche}` : ""}`, {
+        description: "Scraping their live ads now — the Winner Board fills in as they're analyzed.",
+      });
+      setDiscInput("");
+      onDiscovered();
+    } else {
+      toast.error(data?.error ?? "Discovery failed");
+    }
+  };
 
   const add = async () => {
     if (!name.trim() || !url.trim()) return;
@@ -69,8 +95,42 @@ export function CompetitorsTab({
 
   return (
     <div className="space-y-4">
+      {/* Auto-discovery: one brand → its competitor set */}
+      <BentoCard className="space-y-3 p-5 brand-wash">
+        <div className="flex items-center gap-2">
+          <span className="flex size-8 items-center justify-center rounded-full bg-primary/12 text-primary">
+            <Radar className="size-4" />
+          </span>
+          <div>
+            <h3 className="font-medium leading-tight">Discover competitors</h3>
+            <p className="text-xs text-muted-foreground">One brand → its niche + top competitors, harvested automatically.</p>
+          </div>
+        </div>
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="min-w-[240px] flex-1 space-y-1.5">
+            <Label>Brand name, domain, or Meta Page URL</Label>
+            <Input
+              value={discInput}
+              onChange={(e) => setDiscInput(e.target.value)}
+              placeholder="e.g. Vital Proteins  ·  vitalproteins.com"
+              disabled={discovering}
+              onKeyDown={(e) => e.key === "Enter" && !discovering && discover()}
+            />
+          </div>
+          <Button className="cta-glow" onClick={discover} disabled={discovering || !discInput.trim()}>
+            {discovering ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />} Discover competitors
+          </Button>
+        </div>
+        {discovering && (
+          <div className="shimmer flex items-center gap-2 rounded-xl bg-muted/50 px-3 py-2 text-sm text-muted-foreground">
+            <Loader2 className="size-3.5 animate-spin" />
+            Researching the niche → finding competitors → starting their Ad Library scrapes…
+          </div>
+        )}
+      </BentoCard>
+
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm text-muted-foreground">Add competitors by their Meta Ad Library link, then Refresh to pull their live ads.</p>
+        <p className="text-sm text-muted-foreground">…or add competitors by hand via their Meta Ad Library link, then Refresh to pull their live ads.</p>
         <div className="flex items-center gap-2">
           <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
             Ads/scrape
