@@ -2,7 +2,7 @@ import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
 import { and, asc, eq } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
-import { callClaude, toolResult } from "@/lib/providers/claude";
+import { callClaude, toolResult, textOf } from "@/lib/providers/claude";
 import { callGemini } from "@/lib/providers/gemini";
 import { downloadFromStorage, signedUrl } from "@/lib/storage";
 
@@ -51,50 +51,62 @@ async function markApproved(angleBankId: string): Promise<void> {
   await db.update(schema.angleBankEntries).set({ status: "approved", updatedAt: new Date() }).where(eq(schema.angleBankEntries.id, angleBankId));
 }
 
-// ── adapt the winner copy to our brand (Static) ─────────────────────────────
-const COPY_TOOL: Anthropic.Tool = {
-  name: "emit_adapted_copy",
-  description: "Return the winning ad's copy re-expressed for OUR brand.",
-  input_schema: {
-    type: "object",
-    properties: { headline: { type: "string" }, primary_text: { type: "string" } },
-    required: ["headline", "primary_text"],
-  },
-};
+// ── adapt the ON-IMAGE text to our brand (Static) ───────────────────────────
+function imageMime(path: string): string {
+  if (path.endsWith(".png")) return "image/png";
+  if (path.endsWith(".webp")) return "image/webp";
+  if (path.endsWith(".gif")) return "image/gif";
+  return "image/jpeg";
+}
 
-async function adaptCopy(brandId: string, ad: AdRow, bank: AngleBankRow, product: Product | null): Promise<string> {
+/** Transcribe the text rendered ON the creative (headline, callouts, badges, CTA). */
+async function extractOnAdText(brandId: string, imagePath: string): Promise<string> {
+  try {
+    const buf = await downloadFromStorage(imagePath);
+    const text = await callGemini({
+      prompt:
+        "Transcribe ONLY the text that appears ON this ad image, verbatim, in reading order — headline, sub-heads, callouts, badges, CTA button text, on-image disclaimers. Put each distinct text block on its own line. Do NOT describe the image or add commentary. If there is no on-image text, output exactly: NONE.",
+      media: { base64: buf.toString("base64"), mimeType: imageMime(imagePath) },
+      maxOutputTokens: 400,
+      systemKey: SYSTEM_KEY,
+      brandId,
+    });
+    const t = text.trim();
+    return /^none$/i.test(t) ? "" : t;
+  } catch {
+    return "";
+  }
+}
+
+/** "Ad Copy" = the on-image text. Read it off the competitor creative, then
+ *  re-express it as SHORT on-creative copy for our brand (not a caption/body). */
+async function adaptOnAdCopy(brandId: string, ad: AdRow, bank: AngleBankRow, product: Product | null): Promise<string> {
+  const onImage = ad.primaryThumbnail ? await extractOnAdText(brandId, ad.primaryThumbnail) : "";
   const intel = await brandIntel(brandId);
   const resp = await callClaude({
     model: "claude-sonnet-4-6",
-    maxTokens: 700,
+    maxTokens: 400,
     system:
-      "You adapt a winning competitor ad's copy to OUR brand. Re-express the SAME angle/mechanism on our product in our voice. Never mention the competitor, never copy their exact wording, never make a claim our category can't legally support.",
+      "You rewrite the ON-IMAGE ad text (the words placed ON the creative — headline, callouts, CTA) for OUR brand. Keep it as SHORT on-creative copy: a few punchy text blocks mirroring the source's structure and length — NEVER a caption, paragraph, or body description. Our voice, claim-safe, never mention the competitor.",
     messages: [
       {
         role: "user",
         content: [
           `Our brand: ${intel.name}${intel.category ? ` (${intel.category})` : ""}`,
-          `Our voice/positioning:\n${intel.voice || "(none on file)"}`,
-          product ? `Feature our product: ${product.name}${product.keyBenefits ? ` — ${product.keyBenefits}` : ""}` : "Feature the brand generally (no specific product).",
-          "\n--- Winning competitor ad to adapt ---",
-          `Angle: ${bank.angle ?? ad.creativeAngle ?? "?"}`,
-          `Mechanism: ${bank.mechanism ?? ad.proofMechanism ?? "?"}`,
-          `Hook: ${bank.hook ?? ad.visualHook ?? "?"}`,
-          `Their headline: ${ad.headlineTitle ?? "(none)"}`,
-          `Their primary text: ${ad.displayPrimaryText ?? "(none)"}`,
-          bank.complianceFlags?.length ? `Avoid these compliance issues from the source: ${bank.complianceFlags.join("; ")}` : "",
-          "\nReturn our adapted headline + primary_text via emit_adapted_copy.",
+          `Our voice:\n${intel.voice || "(none on file)"}`,
+          product ? `Featuring our product: ${product.name}${product.keyBenefits ? ` — ${product.keyBenefits}` : ""}` : "Brand-level (no specific product).",
+          `Angle: ${bank.angle ?? ad.creativeAngle ?? "?"} · Mechanism: ${bank.mechanism ?? ad.proofMechanism ?? "?"}`,
+          bank.complianceFlags?.length ? `Avoid these compliance issues: ${bank.complianceFlags.join("; ")}` : "",
+          "\n--- The competitor creative's ON-IMAGE text (verbatim) ---",
+          onImage || "(no on-image text detected — write a minimal, on-brand headline + CTA for this angle)",
+          "\nReturn ONLY our adapted on-image text: the exact short text blocks to place on the creative, each on its own line. No caption, no explanation.",
         ].join("\n"),
       },
     ],
-    tools: [COPY_TOOL],
-    toolChoice: { type: "tool", name: "emit_adapted_copy" },
     systemKey: SYSTEM_KEY,
     brandId,
   });
-  const a = toolResult<{ headline: string; primary_text: string }>(resp, "emit_adapted_copy");
-  if (!a) throw new Error("Copy adaptation failed");
-  return `${a.headline}\n\n${a.primary_text}`.trim();
+  return textOf(resp).trim();
 }
 
 // ── deep video analysis + brief (Video) ─────────────────────────────────────
@@ -242,8 +254,8 @@ export async function prepareStaticRemake(brandId: string, conceptId: string, ad
   if (!ad.primaryThumbnail) throw new Error("This winner has no stored image to use as a reference.");
   const productId = await heroProductId(brandId);
   const product = await loadProduct(brandId, productId);
-  const adCopy = await adaptCopy(brandId, ad, bank, product);
-  const compliance = await complianceGate(brandId, "static ad copy", adCopy, bank.complianceFlags ?? []);
+  const adCopy = await adaptOnAdCopy(brandId, ad, bank, product);
+  const compliance = await complianceGate(brandId, "on-image ad copy", adCopy, bank.complianceFlags ?? []);
   await markApproved(bank.id);
   return {
     target: "static",
