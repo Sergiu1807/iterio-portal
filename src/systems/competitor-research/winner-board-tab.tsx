@@ -22,7 +22,6 @@ import { BentoCard } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { EmptyState } from "@/components/shared/empty-state";
 import type { Concept } from "./ui-types";
 import { tierMeta, titleCase, CONFIDENCE_DOT, mediaLabel, TIER_META } from "./ui-utils";
@@ -43,6 +42,7 @@ export function WinnerBoardTab({
   hasActiveJob,
   onViewVariants,
   onSaveSwipe,
+  onRemake,
   savedConceptIds,
 }: {
   concepts: Concept[];
@@ -51,6 +51,7 @@ export function WinnerBoardTab({
   hasActiveJob: boolean;
   onViewVariants: (c: Concept) => void;
   onSaveSwipe: (conceptId: string) => void;
+  onRemake: (c: Concept) => void;
   savedConceptIds: Set<string>;
 }) {
   const [search, setSearch] = useState("");
@@ -228,6 +229,7 @@ export function WinnerBoardTab({
               saved={savedConceptIds.has(c.id)}
               onViewVariants={() => onViewVariants(c)}
               onSaveSwipe={() => onSaveSwipe(c.id)}
+              onRemake={() => onRemake(c)}
             />
           ))}
         </div>
@@ -286,11 +288,13 @@ function WinnerCard({
   saved,
   onViewVariants,
   onSaveSwipe,
+  onRemake,
 }: {
   c: Concept;
   saved: boolean;
   onViewVariants: () => void;
   onSaveSwipe: () => void;
+  onRemake: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const ab = c.angleBank;
@@ -358,16 +362,11 @@ function WinnerCard({
 
         {/* footer actions */}
         <div className="mt-auto flex items-center gap-1.5 border-t border-border/60 pt-2.5">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span className="inline-flex cursor-not-allowed items-center gap-1 rounded-full bg-muted px-2.5 py-1 text-xs font-medium text-muted-foreground/60">
-                <Wand2 className="size-3.5" /> Remake
-              </span>
-            </TooltipTrigger>
-            <TooltipContent>Coming soon — one-click on-brand remake</TooltipContent>
-          </Tooltip>
-          <Button size="sm" variant={saved ? "outline" : "ghost"} onClick={onSaveSwipe} disabled={saved}>
-            {saved ? <BookmarkCheck className="size-3.5" /> : <Bookmark className="size-3.5" />} {saved ? "Saved" : "Save"}
+          <Button size="sm" className="cta-glow" onClick={onRemake}>
+            <Wand2 className="size-3.5" /> Remake
+          </Button>
+          <Button size="sm" variant={saved ? "outline" : "ghost"} onClick={onSaveSwipe} disabled={saved} aria-label={saved ? "Saved to swipe" : "Save to swipe"}>
+            {saved ? <BookmarkCheck className="size-3.5" /> : <Bookmark className="size-3.5" />}
           </Button>
           <Button size="sm" variant="ghost" onClick={onViewVariants} className="ml-auto">
             Variants

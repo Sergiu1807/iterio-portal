@@ -75,15 +75,15 @@ export async function getAllBrands(): Promise<Brand[]> {
  *  Paths live in the DB (products.image_url / video_image_url); the private
  *  bucket means the UI can only render time-limited signed URLs, so we resolve
  *  them on demand here rather than polluting the persisted Brand object. */
-export type ProductMediaMap = Record<string, { image: string | null; video: string | null }>;
+export type ProductMediaMap = Record<string, { image: string | null; video: string | null; name: string; isHero: boolean }>;
 
 export async function getBrandProductMedia(brandId: string): Promise<ProductMediaMap> {
   const rows = await db
-    .select({ id: schema.products.id, imageUrl: schema.products.imageUrl, videoImageUrl: schema.products.videoImageUrl })
+    .select({ id: schema.products.id, name: schema.products.name, isHero: schema.products.isHero, imageUrl: schema.products.imageUrl, videoImageUrl: schema.products.videoImageUrl })
     .from(schema.products)
     .where(eq(schema.products.brandId, brandId));
   const entries = await Promise.all(
-    rows.map(async (r) => [r.id, { image: await signedUrl(r.imageUrl), video: await signedUrl(r.videoImageUrl) }] as const)
+    rows.map(async (r) => [r.id, { image: await signedUrl(r.imageUrl), video: await signedUrl(r.videoImageUrl), name: r.name, isHero: r.isHero }] as const)
   );
   return Object.fromEntries(entries);
 }
