@@ -4,6 +4,7 @@ import { requireAuth, isAuthError } from "@/lib/auth";
 import { db, schema } from "@/lib/db";
 import { pollAndIngestJob } from "@/systems/competitor-research/ingest";
 import { analyzeQueued } from "@/systems/competitor-research/analyze";
+import { scoreAnalyzedJobs } from "@/systems/competitor-research/scoring-run";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -35,5 +36,7 @@ export async function POST(req: Request) {
   }
 
   const analyzed = await analyzeQueued({ brandId, limit: 4 });
-  return NextResponse.json({ activeJobs: jobs.length, analyzed });
+  // Advance any job that just finished analysis through clustering + scoring → complete.
+  const scored = await scoreAnalyzedJobs(brandId);
+  return NextResponse.json({ activeJobs: jobs.length, analyzed, scored });
 }

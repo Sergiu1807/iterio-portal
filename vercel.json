@@ -2,6 +2,7 @@
   "crons": [
     { "path": "/api/cron/poll-runs", "schedule": "* * * * *" },
     { "path": "/api/cron/analyze", "schedule": "*/2 * * * *" },
+    { "path": "/api/cron/score", "schedule": "*/2 * * * *" },
     { "path": "/api/cron/sweep-stuck-jobs", "schedule": "*/15 * * * *" },
     { "path": "/api/cron/static-generation", "schedule": "*/2 * * * *" },
     { "path": "/api/cron/video-generation", "schedule": "*/2 * * * *" }

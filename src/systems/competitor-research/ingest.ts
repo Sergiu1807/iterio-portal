@@ -210,6 +210,10 @@ async function ingestOne(job: Job, brandSlug: string, ad: NormalizedAd, existing
     const patch: Record<string, unknown> = {
       dedupCount: sql`${schema.competitorAds.dedupCount} + 1`,
       scrapeJobId: job.id,
+      // seen again this run → still active; refresh last-seen, backfill first-seen if missing
+      stillActive: true,
+      lastSeenActive: new Date(),
+      firstSeenActive: sql`coalesce(${schema.competitorAds.firstSeenActive}, ${ad.startDate ?? new Date()})`,
       updatedAt: new Date(),
     };
     // opportunistic media backfill on re-scrape (fresh, non-expired URLs)
@@ -253,6 +257,10 @@ async function ingestOne(job: Job, brandSlug: string, ad: NormalizedAd, existing
       brandPageName: ad.pageName ?? null,
       snapshotDate: new Date(),
       adStartDate: ad.startDate ?? null,
+      // activity tracking — every scraped ad was active at this run's snapshot
+      firstSeenActive: ad.startDate ?? new Date(),
+      lastSeenActive: new Date(),
+      stillActive: true,
       metaSortRank: ad.metaSortRank,
       isDco: ad.isDco,
       mediaType: ad.mediaType,

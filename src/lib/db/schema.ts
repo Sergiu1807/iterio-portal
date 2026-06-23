@@ -139,6 +139,7 @@ export const competitors = pgTable(
     metaLibraryUrl: text("meta_library_url"),
     country: text("country").notNull().default("ALL"),
     type: text("type"),
+    niche: text("niche"), // inferred/curated; the swipe library compounds per niche
     isActive: boolean("is_active").notNull().default(true),
     lastScrapedAt: timestamp("last_scraped_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -202,11 +203,12 @@ export const scrapeJobs = pgTable(
     query: text("query").notNull(),
     country: text("country").notNull().default("ALL"),
     requestedCount: integer("requested_count").notNull().default(20),
-    // pending | running | ingesting | analyzing | complete | error
+    niche: text("niche"), // snapshot of the competitor's niche at scrape time
+    // pending | running | ingesting | analyzing | scoring | complete | error
     status: text("status").notNull().default("pending"),
     apifyRunId: text("apify_run_id"),
     apifyDatasetId: text("apify_dataset_id"),
-    stats: jsonb("stats").$type<{ adsFound?: number; adsNew?: number; adsAnalyzed?: number }>().notNull().default({}),
+    stats: jsonb("stats").$type<{ adsFound?: number; adsNew?: number; adsAnalyzed?: number; conceptsScored?: number }>().notNull().default({}),
     costUsd: numeric("cost_usd", { precision: 12, scale: 6 }).notNull().default("0"),
     errorMessage: text("error_message"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -271,6 +273,21 @@ export const competitorAds = pgTable(
     outroOffer: text("outro_offer"),
     fullTranscript: text("full_transcript"),
     geminiDescription: text("gemini_description"),
+    // richer teardown (additive — backfilled lazily by the upgraded analyzer)
+    awarenessLevel: text("awareness_level"), // unaware | problem | solution | product | most
+    emotionalDriver: text("emotional_driver"), // Dream|Nightmare|Speed|Delay|Certainty|Risk|Ease|Difficulty
+    secondaryDrivers: jsonb("secondary_drivers").$type<string[]>().notNull().default([]),
+    beatStructure: jsonb("beat_structure").$type<{ beat: string; text: string }[]>().notNull().default([]),
+    visualNotes: text("visual_notes"),
+    nativeScore: numeric("native_score", { precision: 4, scale: 3 }), // 0.000–1.000
+    complianceFlags: jsonb("compliance_flags").$type<string[]>().notNull().default([]),
+    // activity tracking (winner scoring) — nullable/defaulted so the migration is non-destructive
+    stillActive: boolean("still_active"), // unknown until a status-scrape sees it
+    firstSeenActive: timestamp("first_seen_active", { withTimezone: true }),
+    lastSeenActive: timestamp("last_seen_active", { withTimezone: true }),
+    activeDays: integer("active_days"),
+    resurrected: boolean("resurrected").notNull().default(false),
+    conceptId: uuid("concept_id"), // FK → concept_clusters.id (set in the scoring pass)
     // analysis queue: queued | processing | complete | failed
     aiAnalysisStatus: text("ai_analysis_status").notNull().default("queued"),
     aiErrorMessage: text("ai_error_message"),
@@ -283,6 +300,134 @@ export const competitorAds = pgTable(
     uniqueIndex("competitor_ads_brand_archive_uidx").on(t.brandId, t.adArchiveId),
     index("competitor_ads_brand_idx").on(t.brandId),
     index("competitor_ads_analysis_status_idx").on(t.aiAnalysisStatus),
+    index("competitor_ads_concept_idx").on(t.conceptId),
+  ]
+);
+
+// =============================================
+// CONCEPT CLUSTERS — variant grouping + composite Winner Score
+// One row per (brandId, conceptKey); the unique key makes re-runs idempotent.
+// =============================================
+
+export const conceptClusters = pgTable(
+  "concept_clusters",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    brandId: uuid("brand_id").notNull().references(() => brands.id, { onDelete: "cascade" }),
+    competitorId: uuid("competitor_id").references(() => competitors.id, { onDelete: "set null" }),
+    conceptKey: text("concept_key").notNull(), // collation:<id> | adgroup:<id> | texthash:<hash>
+    clusterMethod: text("cluster_method").notNull(), // collation | ad_group | text_hash
+    advertiser: text("advertiser"),
+    representativeAdId: uuid("representative_ad_id"), // ad whose teardown the Angle Bank inherits
+    // aggregated signals (recomputed each scoring pass)
+    activeVariantCount: integer("active_variant_count").notNull().default(0),
+    totalVariantCount: integer("total_variant_count").notNull().default(0),
+    distinctFormats: integer("distinct_formats").notNull().default(0),
+    formats: jsonb("formats").$type<string[]>().notNull().default([]),
+    firstSeen: timestamp("first_seen", { withTimezone: true }),
+    lastSeenActive: timestamp("last_seen_active", { withTimezone: true }),
+    activeDays: integer("active_days").notNull().default(0),
+    peakActiveDays: integer("peak_active_days").notNull().default(0),
+    stillActive: boolean("still_active").notNull().default(false),
+    resurrected: boolean("resurrected").notNull().default(false),
+    // reach (v1: null — renormalize path)
+    euTotalReach: integer("eu_total_reach"),
+    euReachPerDay: numeric("eu_reach_per_day", { precision: 12, scale: 2 }),
+    // score output
+    winnerScore: integer("winner_score").notNull().default(0),
+    winnerTier: text("winner_tier"), // proven_control | scaling_now | in_testing | historical_swipe | null
+    confidence: text("confidence").notNull().default("low"), // high | medium | low
+    // time series → WoW momentum
+    countHistory: jsonb("count_history")
+      .$type<{ runId: string; at: string; activeVariantCount: number; activeAdIds: string[]; score: number }[]>()
+      .notNull()
+      .default([]),
+    lastScoredRunId: uuid("last_scored_run_id"), // idempotency guard for the history append
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("concept_clusters_brand_key_uidx").on(t.brandId, t.conceptKey),
+    index("concept_clusters_brand_idx").on(t.brandId),
+    index("concept_clusters_score_idx").on(t.brandId, t.winnerScore),
+  ]
+);
+
+// =============================================
+// ANGLE BANK ENTRIES — structured teardown per concept (the research output + remake input)
+// =============================================
+
+export const angleBankEntries = pgTable(
+  "angle_bank_entries",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    brandId: uuid("brand_id").notNull().references(() => brands.id, { onDelete: "cascade" }),
+    conceptId: uuid("concept_id").notNull().references(() => conceptClusters.id, { onDelete: "cascade" }),
+    representativeAdId: uuid("representative_ad_id").references(() => competitorAds.id, { onDelete: "set null" }),
+    advertiser: text("advertiser"),
+    firstSeen: timestamp("first_seen", { withTimezone: true }),
+    lastSeenActive: timestamp("last_seen_active", { withTimezone: true }),
+    stillActive: boolean("still_active").notNull().default(false),
+    format: text("format"),
+    platforms: jsonb("platforms").$type<string[]>().notNull().default([]),
+    // teardown (inherited from the representative ad's enriched analysis)
+    offer: text("offer"),
+    angle: text("angle"),
+    hook: text("hook"),
+    mechanism: text("mechanism"),
+    awarenessLevel: text("awareness_level"),
+    emotionalDriver: text("emotional_driver"),
+    secondaryDrivers: jsonb("secondary_drivers").$type<string[]>().notNull().default([]),
+    beatStructure: jsonb("beat_structure").$type<{ beat: string; text: string }[]>().notNull().default([]),
+    visualNotes: text("visual_notes"),
+    nativeScore: numeric("native_score", { precision: 4, scale: 3 }),
+    complianceFlags: jsonb("compliance_flags").$type<string[]>().notNull().default([]),
+    // score snapshot (denormalized from the concept for the Angle Bank card)
+    winnerScore: integer("winner_score").notNull().default(0),
+    winnerTier: text("winner_tier"),
+    signals: jsonb("signals").$type<{
+      activeDays: number;
+      activeVariants: number;
+      euTotalReach: number | null;
+      euReachPerDay: number | null;
+      relaunched: boolean;
+      formats: string[];
+    }>(),
+    confidence: text("confidence").notNull().default("low"),
+    // curation lifecycle
+    status: text("status").notNull().default("raw"), // raw | approved
+    usedInGenerations: jsonb("used_in_generations").$type<string[]>().notNull().default([]),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("angle_bank_concept_uidx").on(t.conceptId),
+    index("angle_bank_brand_idx").on(t.brandId),
+    index("angle_bank_status_idx").on(t.brandId, t.status),
+  ]
+);
+
+// =============================================
+// SWIPE LIBRARY — saved/curated winners; compounds per niche
+// =============================================
+
+export const swipeLibrary = pgTable(
+  "swipe_library",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    brandId: uuid("brand_id").notNull().references(() => brands.id, { onDelete: "cascade" }),
+    angleBankEntryId: uuid("angle_bank_entry_id").references(() => angleBankEntries.id, { onDelete: "set null" }),
+    conceptId: uuid("concept_id").references(() => conceptClusters.id, { onDelete: "set null" }),
+    niche: text("niche"),
+    tags: jsonb("tags").$type<string[]>().notNull().default([]),
+    note: text("note"),
+    snapshot: jsonb("snapshot").$type<Record<string, unknown>>(), // survives concept deletion
+    savedBy: uuid("saved_by").references(() => profiles.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("swipe_brand_idx").on(t.brandId),
+    index("swipe_niche_idx").on(t.niche),
   ]
 );
 

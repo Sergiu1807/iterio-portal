@@ -39,6 +39,30 @@ export function mediaLabel(t: string | null): string {
   return t.charAt(0).toUpperCase() + t.slice(1);
 }
 
+// ── Winner Board ──────────────────────────────────────────────────────────
+export const TIER_META: Record<string, { label: string; emoji: string; variant: NonNullable<BadgeProps["variant"]> }> = {
+  proven_control: { label: "Proven control", emoji: "🏆", variant: "success" },
+  scaling_now: { label: "Scaling now", emoji: "🔥", variant: "warning" },
+  in_testing: { label: "In testing", emoji: "🧪", variant: "accent" },
+  historical_swipe: { label: "Historical", emoji: "📚", variant: "muted" },
+};
+
+export function tierMeta(tier: string | null) {
+  return tier ? TIER_META[tier] ?? null : null;
+}
+
+export function titleCase(s: string | null | undefined): string {
+  if (!s) return "";
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+/** Confidence → a dot colour class. */
+export const CONFIDENCE_DOT: Record<string, string> = {
+  high: "bg-success",
+  medium: "bg-warning",
+  low: "bg-muted-foreground/40",
+};
+
 export const COUNTRIES = [
   "ALL", "US", "GB", "CA", "AU", "NZ", "IE", "DE", "FR", "ES", "IT", "NL", "SE", "NO", "DK", "FI", "PT", "BE", "AT", "CH", "PL", "BR", "MX", "JP", "SG", "AE",
 ];

@@ -43,6 +43,13 @@
       "when": 1781687946408,
       "tag": "0005_video_generation",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1782205321029,
+      "tag": "0006_blue_omega_sentinel",
+      "breakpoints": true
     }
   ]
 }

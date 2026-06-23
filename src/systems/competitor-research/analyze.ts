@@ -21,19 +21,46 @@ function isTransient(e: unknown): boolean {
 
 const ANALYSIS_TOOL: Anthropic.Tool = {
   name: "emit_ad_analysis",
-  description: "Return the structured competitor-ad analysis.",
+  description: "Return the structured competitor-ad analysis — a reusable Angle Bank teardown.",
   input_schema: {
     type: "object",
     properties: {
-      creative_angle: { type: "string", description: "The core creative angle / strategic hypothesis." },
+      creative_angle: { type: "string", description: "The core creative angle / big promise / strategic hypothesis." },
       ad_description: { type: "string", description: "1-2 sentence plain description of the ad." },
       target_persona: { type: "string" },
       core_motivation: { type: "string" },
-      proof_mechanism: { type: "string", description: "How the ad earns belief (proof, demo, social, authority…)." },
+      proof_mechanism: { type: "string", description: "The unique 'why it works' mechanism (proof, demo, social, authority…)." },
       visual_hook: { type: "string" },
       spoken_hook: { type: "string", description: "Opening spoken/voiceover hook if discernible, else empty." },
-      outro_offer: { type: "string", description: "Closing offer/CTA framing, else empty." },
+      outro_offer: { type: "string", description: "The actual offer/promo in the ad (closing CTA framing), else empty." },
       full_transcript: { type: "string", description: "Transcript if it's a video and discernible, else empty." },
+      // ── richer Angle Bank teardown ──
+      awareness_level: {
+        type: "string",
+        enum: ["unaware", "problem", "solution", "product", "most"],
+        description: "Eugene Schwartz awareness stage the ad targets.",
+      },
+      emotional_driver: {
+        type: "string",
+        enum: ["dream", "nightmare", "speed", "delay", "certainty", "risk", "ease", "difficulty"],
+        description: "The primary emotional polarity the ad pulls on.",
+      },
+      secondary_drivers: { type: "array", items: { type: "string" }, description: "Other emotional drivers at play." },
+      beat_structure: {
+        type: "array",
+        description: "The ad broken into ordered narrative beats.",
+        items: {
+          type: "object",
+          properties: { beat: { type: "string", description: "e.g. HOOK, PROBLEM, MECHANISM, PROOF, DREAM, CTA" }, text: { type: "string" } },
+          required: ["beat", "text"],
+        },
+      },
+      native_score: { type: "number", description: "0..1 — how organic / 'doesn't look like an ad' it is." },
+      compliance_flags: {
+        type: "array",
+        items: { type: "string" },
+        description: "Risky claims/imagery (e.g. 'implied disease claim', 'before/after imagery'); empty if clean.",
+      },
     },
     required: ["creative_angle", "ad_description", "target_persona", "core_motivation", "proof_mechanism", "visual_hook"],
   },
@@ -49,6 +76,12 @@ type Analysis = {
   spoken_hook?: string;
   outro_offer?: string;
   full_transcript?: string;
+  awareness_level?: string;
+  emotional_driver?: string;
+  secondary_drivers?: string[];
+  beat_structure?: { beat: string; text: string }[];
+  native_score?: number;
+  compliance_flags?: string[];
 };
 
 type AdRow = typeof schema.competitorAds.$inferSelect;
@@ -133,6 +166,7 @@ async function analyzeOne(ad: AdRow, cache: Map<string, string>): Promise<void> 
     analyzedVideo
       ? "\nUse the video analysis to fill spoken_hook and full_transcript with the actual voiceover/spoken lines."
       : "",
+    "\nAlso classify: awareness_level (Schwartz), emotional_driver (+ secondary_drivers), the ordered beat_structure, a native_score (0..1 = how organic it looks), and compliance_flags for any risky claims/imagery.",
     "\nReturn the structured breakdown via the emit_ad_analysis tool.",
   ].join("\n");
 
@@ -163,6 +197,13 @@ async function analyzeOne(ad: AdRow, cache: Map<string, string>): Promise<void> 
       outroOffer: a.outro_offer || null,
       fullTranscript: a.full_transcript || null,
       geminiDescription: geminiDesc || null,
+      awarenessLevel: a.awareness_level || null,
+      emotionalDriver: a.emotional_driver || null,
+      secondaryDrivers: a.secondary_drivers ?? [],
+      beatStructure: a.beat_structure ?? [],
+      visualNotes: geminiDesc || null, // Gemini vision summary: on-screen text, scene, pacing
+      nativeScore: typeof a.native_score === "number" ? a.native_score.toFixed(3) : null,
+      complianceFlags: a.compliance_flags ?? [],
       aiAnalysisStatus: "complete",
       aiErrorMessage: null,
       aiLastAnalyzedAt: new Date(),
@@ -281,9 +322,11 @@ async function completeFinishedJobs(brandId?: string): Promise<void> {
         )
       );
 
+    // Hand off to the scoring stage (cluster → composite Winner Score → Angle Bank).
+    // The score cron + the UI tick both drive scoreAnalyzedJobs() from here → 'complete'.
     await db
       .update(schema.scrapeJobs)
-      .set({ status: "complete", stats: { ...(job.stats ?? {}), adsAnalyzed: analyzed }, updatedAt: new Date() })
+      .set({ status: "scoring", stats: { ...(job.stats ?? {}), adsAnalyzed: analyzed }, updatedAt: new Date() })
       .where(eq(schema.scrapeJobs.id, job.id));
   }
 }

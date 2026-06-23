@@ -44,6 +44,41 @@ export type Job = {
   createdAt: string;
 };
 
+export type ConceptAngleBank = {
+  angle: string | null;
+  hook: string | null;
+  mechanism: string | null;
+  offer: string | null;
+  awarenessLevel: string | null;
+  emotionalDriver: string | null;
+  secondaryDrivers: string[];
+  beatStructure: { beat: string; text: string }[];
+  visualNotes: string | null;
+  nativeScore: number | null;
+  complianceFlags: string[];
+  status: string;
+};
+
+export type Concept = {
+  id: string;
+  title: string;
+  advertiser: string | null;
+  tier: string | null;
+  winnerScore: number;
+  confidence: string;
+  activeDays: number;
+  activeVariantCount: number;
+  totalVariantCount: number;
+  stillActive: boolean;
+  formats: string[];
+  euReach: number | null;
+  mediaType: string | null;
+  thumbUrl: string | null;
+  momentum: { wowDelta: number; isNewThisWeek: boolean; countHistory: { at: string; count: number }[] };
+  angleBank: ConceptAngleBank | null;
+  variantAdIds: string[];
+};
+
 export type Source = {
   id: string;
   name: string;

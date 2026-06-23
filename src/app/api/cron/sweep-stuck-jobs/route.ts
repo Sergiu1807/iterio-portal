@@ -19,7 +19,7 @@ export async function GET(req: Request) {
     .set({ status: "error", errorMessage: "Timed out (sweep)", updatedAt: new Date() })
     .where(
       and(
-        inArray(schema.scrapeJobs.status, ["pending", "running", "ingesting", "analyzing"]),
+        inArray(schema.scrapeJobs.status, ["pending", "running", "ingesting", "analyzing", "scoring"]),
         lt(schema.scrapeJobs.updatedAt, new Date(now - 30 * 60_000))
       )
     );
