@@ -23,6 +23,8 @@ type NormalizedAd = {
   thumbnailUrl?: string;
   videoUrl?: string;
   carouselImageUrls: string[];
+  // ordered, per-card source URLs (each card can be an image and/or a video)
+  carouselCards: { imageUrl?: string; videoUrl?: string }[];
   adLibraryUrl?: string;
   startDate?: Date;
   metaSortRank: number;
@@ -77,7 +79,7 @@ export function normalizeMetaAd(raw: Record<string, any>, index: number): Normal
   let thumbnailUrl: string | undefined;
   let videoUrl: string | undefined;
   const carouselImageUrls: string[] = [];
-  const carouselVideoUrls: string[] = [];
+  const carouselCards: { imageUrl?: string; videoUrl?: string }[] = [];
 
   if (videos.length) {
     mediaType = "video";
@@ -86,14 +88,14 @@ export function normalizeMetaAd(raw: Record<string, any>, index: number): Normal
   } else if (cards.length >= 2 || displayFormat === "CAROUSEL" || displayFormat === "DPA") {
     mediaType = "carousel";
     for (const c of cards.slice(0, MAX_CARDS)) {
-      const img = str(c?.original_image_url) ?? str(c?.resized_image_url) ?? str(c?.video_preview_image_url);
-      if (img) carouselImageUrls.push(img);
-      const cv = str(c?.video_hd_url) ?? str(c?.video_sd_url);
-      if (cv) carouselVideoUrls.push(cv);
+      const imageUrl = str(c?.original_image_url) ?? str(c?.resized_image_url) ?? str(c?.video_preview_image_url);
+      const cardVideo = str(c?.video_hd_url) ?? str(c?.video_sd_url);
+      carouselCards.push({ imageUrl, videoUrl: cardVideo }); // keep order + alignment, even if one is missing
+      if (imageUrl) carouselImageUrls.push(imageUrl);
     }
     thumbnailUrl = carouselImageUrls[0];
-    // a "video carousel" — capture the first card video so analysis can use it
-    if (carouselVideoUrls.length) videoUrl = carouselVideoUrls[0];
+    // first available card video (analysis/back-compat use the single videoUrl)
+    videoUrl = carouselCards.find((c) => c.videoUrl)?.videoUrl;
   } else if (cards.length === 1) {
     mediaType = "image";
     thumbnailUrl = str(cards[0]?.original_image_url) ?? str(cards[0]?.resized_image_url);
@@ -131,6 +133,7 @@ export function normalizeMetaAd(raw: Record<string, any>, index: number): Normal
     thumbnailUrl,
     videoUrl,
     carouselImageUrls,
+    carouselCards,
     adLibraryUrl: str(raw?.url),
     startDate: toDate(raw?.startDate ?? raw?.start_date ?? snap?.start_date),
     metaSortRank: index,
@@ -162,33 +165,52 @@ async function storeMedia(brandSlug: string, adArchiveId: string, name: string, 
   }
 }
 
-type Captured = { thumbPath: string | null; videoPath: string | null; mediaCards: string[]; failed: boolean };
+type CardItem = { image: string | null; video: string | null };
+type Captured = { thumbPath: string | null; videoPath: string | null; mediaCards: string[]; cardItems: CardItem[]; failed: boolean };
 
-/** Download poster + (parallel) carousel frames + full video to Storage. */
+const IMG_MAX = 25 * 1024 * 1024;
+const VID_MAX = 200 * 1024 * 1024;
+
+/** Download poster + every carousel card (image AND video) + full video to Storage. */
 async function captureMedia(brandSlug: string, ad: NormalizedAd): Promise<Captured> {
-  let mediaCards: string[] = [];
-  if (ad.mediaType === "carousel" && ad.carouselImageUrls.length) {
-    const settled = await Promise.allSettled(
-      ad.carouselImageUrls.slice(0, MAX_CARDS).map((u, i) => storeMedia(brandSlug, ad.adArchiveId, `card${i}`, u, 25 * 1024 * 1024, 12_000))
+  // Per-card capture (ordered) so the UI can play/step through ALL slides.
+  let cardItems: CardItem[] = [];
+  if (ad.mediaType === "carousel" && ad.carouselCards.length) {
+    cardItems = await Promise.all(
+      ad.carouselCards.slice(0, MAX_CARDS).map(async (c, i) => {
+        const [image, video] = await Promise.all([
+          c.imageUrl ? storeMedia(brandSlug, ad.adArchiveId, `card${i}`, c.imageUrl, IMG_MAX, 12_000) : Promise.resolve(null),
+          c.videoUrl ? storeMedia(brandSlug, ad.adArchiveId, `card${i}v`, c.videoUrl, VID_MAX, 45_000) : Promise.resolve(null),
+        ]);
+        return { image, video };
+      })
     );
-    mediaCards = settled.map((r) => (r.status === "fulfilled" ? r.value : null)).filter((p): p is string => !!p);
+  }
+  const mediaCards = cardItems.map((c) => c.image).filter((p): p is string => !!p);
+
+  // poster + single video: carousels reuse the first card's media (no duplicate fetch);
+  // non-carousels fetch their own thumbnail/video.
+  let thumbPath: string | null = null;
+  let videoPath: string | null = null;
+  if (ad.mediaType === "carousel") {
+    thumbPath = cardItems.find((c) => c.image)?.image ?? null;
+    videoPath = cardItems.find((c) => c.video)?.video ?? null;
+  } else {
+    if (ad.thumbnailUrl) thumbPath = await storeMedia(brandSlug, ad.adArchiveId, "thumb", ad.thumbnailUrl, IMG_MAX, 12_000);
+    if (ad.videoUrl) videoPath = await storeMedia(brandSlug, ad.adArchiveId, "video", ad.videoUrl, VID_MAX, 45_000);
   }
 
-  // poster: carousels reuse card0 (no duplicate fetch); others fetch the thumbnail
-  let thumbPath: string | null = null;
-  if (ad.mediaType === "carousel") thumbPath = mediaCards[0] ?? null;
-  else if (ad.thumbnailUrl) thumbPath = await storeMedia(brandSlug, ad.adArchiveId, "thumb", ad.thumbnailUrl, 25 * 1024 * 1024, 12_000);
-
-  let videoPath: string | null = null;
-  if (ad.videoUrl) videoPath = await storeMedia(brandSlug, ad.adArchiveId, "video", ad.videoUrl, 200 * 1024 * 1024, 45_000);
-
   const thumbFailed = ad.mediaType !== "carousel" && !!ad.thumbnailUrl && !thumbPath;
-  const videoFailed = !!ad.videoUrl && !videoPath;
-  const cardsFailed = ad.mediaType === "carousel" && mediaCards.length < Math.min(ad.carouselImageUrls.length, MAX_CARDS);
+  const videoFailed = ad.mediaType !== "carousel" && !!ad.videoUrl && !videoPath;
+  const expectImg = Math.min(ad.carouselCards.filter((c) => c.imageUrl).length, MAX_CARDS);
+  const expectVid = Math.min(ad.carouselCards.filter((c) => c.videoUrl).length, MAX_CARDS);
+  const gotImg = cardItems.filter((c) => c.image).length;
+  const gotVid = cardItems.filter((c) => c.video).length;
+  const cardsFailed = ad.mediaType === "carousel" && (gotImg < expectImg || gotVid < expectVid);
   if (thumbFailed || videoFailed || cardsFailed) {
     console.warn("[ingest] media capture incomplete", ad.adArchiveId, ad.mediaType, { thumbFailed, videoFailed, cardsFailed });
   }
-  return { thumbPath, videoPath, mediaCards, failed: thumbFailed || videoFailed || cardsFailed };
+  return { thumbPath, videoPath, mediaCards, cardItems, failed: thumbFailed || videoFailed || cardsFailed };
 }
 
 type ExistingAd = {
@@ -197,6 +219,7 @@ type ExistingAd = {
   primaryThumbnail: string | null;
   videoPath: string | null;
   mediaCards: string[];
+  mediaCardItems: CardItem[];
   fullMediaAsset: string | null;
   aiAnalysisStatus: string;
   mediaCaptureFailed: boolean;
@@ -228,9 +251,11 @@ async function ingestOne(job: Job, brandSlug: string, ad: NormalizedAd, existing
       const newThumb = !existing.primaryThumbnail ? cap.thumbPath : null;
       const newVideo = !existing.videoPath ? cap.videoPath : null;
       const newCards = (!existing.mediaCards || existing.mediaCards.length === 0) && cap.mediaCards.length ? cap.mediaCards : null;
+      const newCardItems = (!existing.mediaCardItems || existing.mediaCardItems.length === 0) && cap.cardItems.length ? cap.cardItems : null;
       if (newThumb) patch.primaryThumbnail = newThumb;
       if (newVideo) patch.videoPath = newVideo;
       if (newCards) patch.mediaCards = newCards;
+      if (newCardItems) patch.mediaCardItems = newCardItems;
       patch.fullMediaAsset = (newVideo ?? existing.videoPath) ?? (newThumb ?? existing.primaryThumbnail) ?? existing.fullMediaAsset;
       patch.mediaCaptureFailed = cap.failed;
       patch.mediaCaptureAttempts = existing.mediaCaptureAttempts + 1;
@@ -273,6 +298,7 @@ async function ingestOne(job: Job, brandSlug: string, ad: NormalizedAd, existing
       primaryThumbnail: cap.thumbPath,
       videoPath: cap.videoPath,
       mediaCards: cap.mediaCards,
+      mediaCardItems: cap.cardItems,
       fullMediaAsset: cap.videoPath ?? cap.thumbPath ?? cap.mediaCards[0] ?? null,
       mediaCaptureFailed: cap.failed,
       mediaCaptureAttempts: 1,
@@ -326,6 +352,7 @@ export async function pollAndIngestJob(job: Job): Promise<void> {
           primaryThumbnail: schema.competitorAds.primaryThumbnail,
           videoPath: schema.competitorAds.videoPath,
           mediaCards: schema.competitorAds.mediaCards,
+          mediaCardItems: schema.competitorAds.mediaCardItems,
           fullMediaAsset: schema.competitorAds.fullMediaAsset,
           aiAnalysisStatus: schema.competitorAds.aiAnalysisStatus,
           mediaCaptureFailed: schema.competitorAds.mediaCaptureFailed,

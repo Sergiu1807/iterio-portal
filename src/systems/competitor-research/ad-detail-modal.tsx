@@ -19,6 +19,7 @@ export function AdDetailModal({ ad, onClose }: { ad: Ad | null; onClose: () => v
     thumbUrl: ad?.thumbUrl ?? null,
     videoUrl: ad?.videoUrl ?? null,
     cardUrls: ad?.cardUrls ?? [],
+    cardItems: ad?.cardItems ?? [],
   }));
   const [reSigned, setReSigned] = useState(false);
 
@@ -27,9 +28,13 @@ export function AdDetailModal({ ad, onClose }: { ad: Ad | null; onClose: () => v
   const badge = longevityBadge(ad.snapshotDate, ad.adStartDate);
   const snapFmt = ad.snapshotDate ? new Date(ad.snapshotDate).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" }) : null;
   const cards = media.cardUrls;
-  const idx = Math.min(card, Math.max(0, cards.length - 1));
+  // per-card slides (image and/or video) — drives the "show ALL carousel items" viewer
+  const items = (media.cardItems ?? []).filter((c) => c.imageUrl || c.videoUrl);
+  const hasItems = items.length > 0;
+  const slideCount = hasItems ? items.length : cards.length;
+  const idx = Math.min(card, Math.max(0, slideCount - 1));
   const isMediaAd = !!ad.mediaType && ad.mediaType !== "text";
-  const hasStoredMedia = !!(media.videoUrl || cards.length > 0 || media.thumbUrl);
+  const hasStoredMedia = !!(hasItems || media.videoUrl || cards.length > 0 || media.thumbUrl);
 
   // On a media load error, try a one-shot re-sign before giving up.
   const onMediaError = async () => {
@@ -42,7 +47,7 @@ export function AdDetailModal({ ad, onClose }: { ad: Ad | null; onClose: () => v
       const r = await fetch(`/api/systems/competitor-research/ad/${ad.id}/media`);
       if (r.ok) {
         const fresh = await r.json();
-        setMedia({ thumbUrl: fresh.thumbUrl ?? null, videoUrl: fresh.videoUrl ?? null, cardUrls: fresh.cardUrls ?? [] });
+        setMedia({ thumbUrl: fresh.thumbUrl ?? null, videoUrl: fresh.videoUrl ?? null, cardUrls: fresh.cardUrls ?? [], cardItems: fresh.cardItems ?? [] });
         return;
       }
     } catch {
@@ -60,6 +65,31 @@ export function AdDetailModal({ ad, onClose }: { ad: Ad | null; onClose: () => v
             <div className="w-full">
               {mediaError ? (
                 <MediaNotice label="Media unavailable" adLibraryUrl={ad.adLibraryUrl} />
+              ) : hasItems ? (
+                <div>
+                  {items[idx]?.videoUrl ? (
+                    // eslint-disable-next-line jsx-a11y/media-has-caption
+                    <video key={idx} src={items[idx].videoUrl!} poster={items[idx].imageUrl ?? undefined} controls preload="metadata" className="w-full rounded-xl" onError={onMediaError} />
+                  ) : items[idx]?.imageUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={items[idx].imageUrl!} alt={`Card ${idx + 1}`} className="w-full rounded-xl" onError={onMediaError} />
+                  ) : (
+                    <MediaNotice label="Card media unavailable" adLibraryUrl={ad.adLibraryUrl} />
+                  )}
+                  {items.length > 1 && (
+                    <div className="mt-3 flex items-center justify-center gap-3">
+                      <button onClick={() => setCard(Math.max(0, idx - 1))} disabled={idx === 0} className="rounded-full p-1.5 text-muted-foreground hover:bg-muted disabled:opacity-30">
+                        <ChevronLeft className="size-5" />
+                      </button>
+                      <span className="text-xs font-medium text-muted-foreground">
+                        {items[idx]?.videoUrl ? "Video" : "Image"} {idx + 1} of {items.length}
+                      </span>
+                      <button onClick={() => setCard(Math.min(items.length - 1, idx + 1))} disabled={idx === items.length - 1} className="rounded-full p-1.5 text-muted-foreground hover:bg-muted disabled:opacity-30">
+                        <ChevronRight className="size-5" />
+                      </button>
+                    </div>
+                  )}
+                </div>
               ) : media.videoUrl ? (
                 // eslint-disable-next-line jsx-a11y/media-has-caption
                 <video src={media.videoUrl} poster={media.thumbUrl ?? undefined} controls preload="metadata" className="w-full rounded-xl" onError={onMediaError} />

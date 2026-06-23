@@ -16,6 +16,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       primaryThumbnail: schema.competitorAds.primaryThumbnail,
       videoPath: schema.competitorAds.videoPath,
       mediaCards: schema.competitorAds.mediaCards,
+      mediaCardItems: schema.competitorAds.mediaCardItems,
     })
     .from(schema.competitorAds)
     .where(eq(schema.competitorAds.id, id))
@@ -26,5 +27,6 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     thumbUrl: await signedUrl(ad.primaryThumbnail),
     videoUrl: await signedUrl(ad.videoPath),
     cardUrls: (await Promise.all((ad.mediaCards ?? []).map((p) => signedUrl(p)))).filter(Boolean) as string[],
+    cardItems: await Promise.all((ad.mediaCardItems ?? []).map(async (c) => ({ imageUrl: await signedUrl(c.image), videoUrl: await signedUrl(c.video) }))),
   });
 }

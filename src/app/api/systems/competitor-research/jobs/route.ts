@@ -31,6 +31,7 @@ export async function GET(req: Request) {
       thumbUrl: await signedUrl(a.primaryThumbnail),
       videoUrl: await signedUrl(a.videoPath),
       cardUrls: (await Promise.all((a.mediaCards ?? []).map((p) => signedUrl(p)))).filter(Boolean) as string[],
+      cardItems: await Promise.all((a.mediaCardItems ?? []).map(async (c) => ({ imageUrl: await signedUrl(c.image), videoUrl: await signedUrl(c.video) }))),
     }))
   );
 

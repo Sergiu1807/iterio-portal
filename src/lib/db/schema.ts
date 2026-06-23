@@ -247,7 +247,9 @@ export const competitorAds = pgTable(
     mediaType: text("media_type"), // video | image | carousel | text
     primaryThumbnail: text("primary_thumbnail"), // poster image path
     videoPath: text("video_path"), // stored full video path (video ads)
-    mediaCards: jsonb("media_cards").$type<string[]>().notNull().default([]), // carousel image paths
+    mediaCards: jsonb("media_cards").$type<string[]>().notNull().default([]), // carousel image paths (legacy/grid)
+    // per-card media (ordered), so a carousel can show ALL its slides — images and/or videos
+    mediaCardItems: jsonb("media_card_items").$type<{ image: string | null; video: string | null }[]>().notNull().default([]),
     fullMediaAsset: text("full_media_asset"),
     platformsDisplay: text("platforms_display"),
     // media capture diagnostics + backfill

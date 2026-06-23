@@ -7,6 +7,7 @@ export type Ad = {
   thumbUrl: string | null;
   videoUrl: string | null;
   cardUrls: string[];
+  cardItems: { imageUrl: string | null; videoUrl: string | null }[];
   displayPrimaryText: string | null;
   headlineTitle: string | null;
   ctaButtonType: string | null;
