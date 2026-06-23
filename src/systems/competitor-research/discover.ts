@@ -73,23 +73,13 @@ export async function discoverCompetitors(input: string, brandId: string): Promi
   return { niche: out.niche ?? "", competitors: out.competitors };
 }
 
-export type DiscoveryResult = {
-  niche: string;
-  competitors: { name: string; scraped: boolean }[];
-  jobsStarted: number;
-};
+export type Candidate = { name: string; domain?: string; metaPageUrl?: string; hasMetaUrl: boolean };
 
-/**
- * One brand in → discover its competitor set → persist (deduped, with niche) →
- * fan out one Ad Library scrape per competitor (valid Meta URL, else keyword by
- * name). The existing poll/ingest/analyze/score pipeline harvests them from there.
- */
-export async function runDiscovery(brandId: string, input: string, requestedCount: number): Promise<DiscoveryResult> {
+/** Phase 1 — return the candidate competitor set for review. No persistence, no scraping. */
+export async function discoverCandidates(input: string, brandId: string): Promise<{ niche: string; candidates: Candidate[] }> {
   const { niche, competitors } = await discoverCompetitors(input, brandId);
-
-  // dedupe the model's list by name + domain, cap the count
   const seen = new Set<string>();
-  const list: Competitor[] = [];
+  const candidates: Candidate[] = [];
   for (const c of competitors) {
     const nameKey = norm(c.name ?? "");
     const domKey = cleanDomain(c.domain);
@@ -97,18 +87,38 @@ export async function runDiscovery(brandId: string, input: string, requestedCoun
     if (seen.has(nameKey) || (domKey && seen.has(domKey))) continue;
     seen.add(nameKey);
     if (domKey) seen.add(domKey);
-    list.push(c);
-    if (list.length >= MAX_COMPETITORS) break;
+    const validMeta = c.metaPageUrl && isAdLibraryUrl(c.metaPageUrl) ? c.metaPageUrl : undefined;
+    candidates.push({ name: c.name.trim(), domain: domKey || undefined, metaPageUrl: validMeta, hasMetaUrl: !!validMeta });
+    if (candidates.length >= MAX_COMPETITORS) break;
   }
+  return { niche, candidates };
+}
 
-  // existing competitors for this brand → reuse rather than duplicate
+export type SelectedCompetitor = { name: string; domain?: string; metaPageUrl?: string; count?: number };
+export type DiscoveryResult = { competitors: { name: string; scraped: boolean }[]; jobsStarted: number };
+
+/**
+ * Phase 2 — persist the chosen competitors (deduped, with niche) and fan out one
+ * Ad Library scrape each (valid Meta URL, else keyword by name) at the per-
+ * competitor ad count. The existing poll/ingest/analyze/score pipeline harvests them.
+ */
+export async function scrapeSelectedCompetitors(brandId: string, niche: string, selected: SelectedCompetitor[]): Promise<DiscoveryResult> {
+  const seen = new Set<string>();
+  const list = selected
+    .filter((c) => {
+      const k = norm(c.name ?? "");
+      if (!k || seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    })
+    .slice(0, MAX_COMPETITORS);
+
   const existing = await db
     .select({ id: schema.competitors.id, name: schema.competitors.name, metaLibraryUrl: schema.competitors.metaLibraryUrl })
     .from(schema.competitors)
     .where(eq(schema.competitors.brandId, brandId));
   const byName = new Map(existing.map((e) => [norm(e.name), e]));
 
-  // process each competitor in parallel (distinct rows, independent scrapes)
   const settled = await Promise.allSettled(
     list.map(async (c) => {
       const ex = byName.get(norm(c.name));
@@ -136,7 +146,7 @@ export async function runDiscovery(brandId: string, input: string, requestedCoun
         metaLibraryUrl = validMeta;
       }
 
-      // prefer a known Ad Library URL; otherwise keyword-search the Ad Library by name
+      const requestedCount = Math.min(100, Math.max(1, c.count || 20));
       if (metaLibraryUrl && isAdLibraryUrl(metaLibraryUrl)) {
         await startScrapeJob({ brandId, mode: "url", query: metaLibraryUrl, requestedCount, competitorId, niche });
       } else {
@@ -147,5 +157,5 @@ export async function runDiscovery(brandId: string, input: string, requestedCoun
   );
 
   const results = list.map((c, i) => ({ name: c.name, scraped: settled[i].status === "fulfilled" }));
-  return { niche, competitors: results, jobsStarted: results.filter((r) => r.scraped).length };
+  return { competitors: results, jobsStarted: results.filter((r) => r.scraped).length };
 }

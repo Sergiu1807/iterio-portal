@@ -3,13 +3,12 @@ import { eq } from "drizzle-orm";
 import { requireAuth, isAuthError } from "@/lib/auth";
 import { db, schema } from "@/lib/db";
 import { getApiKey } from "@/lib/api-keys";
-import { runDiscovery } from "@/systems/competitor-research/discover";
+import { discoverCandidates } from "@/systems/competitor-research/discover";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 120; // Tavily search + Claude extraction + N Apify starts
+export const maxDuration = 120; // Tavily search + Claude extraction
 
-/** One brand in → discover competitors → fan out scrapes. Returns the niche +
- *  competitor set; the existing pipeline harvests them (the UI then pumps). */
+/** Phase 1: one brand in → return candidate competitors for review (no scraping). */
 export async function POST(req: Request) {
   const auth = await requireAuth();
   if (isAuthError(auth)) return auth;
@@ -17,7 +16,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Insufficient permissions" }, { status: 403 });
   }
 
-  const { brandId, input, count } = (await req.json()) as { brandId?: string; input?: string; count?: number };
+  const { brandId, input } = (await req.json()) as { brandId?: string; input?: string };
   if (!brandId || !input?.trim()) {
     return NextResponse.json({ error: "brandId and input are required" }, { status: 400 });
   }
@@ -29,10 +28,7 @@ export async function POST(req: Request) {
   }
 
   try {
-    const result = await runDiscovery(brandId, input.trim(), Math.min(100, Math.max(1, count || 20)));
-    if (result.jobsStarted === 0) {
-      return NextResponse.json({ error: "Found no competitors to scrape — try a more specific brand name or add competitors manually.", ...result }, { status: 422 });
-    }
+    const result = await discoverCandidates(input.trim(), brandId);
     return NextResponse.json(result);
   } catch (e) {
     return NextResponse.json({ error: `Discovery failed: ${String((e as Error)?.message ?? e).slice(0, 200)}` }, { status: 502 });
