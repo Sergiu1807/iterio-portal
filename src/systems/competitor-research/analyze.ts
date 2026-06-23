@@ -3,7 +3,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { and, asc, eq, gte, inArray, lt, sql } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
 import { callClaude, toolResult } from "@/lib/providers/claude";
-import { callGemini } from "@/lib/providers/gemini";
+import { callGemini, type GeminiMedia } from "@/lib/providers/gemini";
 import { downloadFromStorage } from "@/lib/storage";
 import { SYSTEM_KEY } from "./ingest";
 
@@ -117,14 +117,74 @@ function videoMimeFor(path: string): string {
   return "video/mp4";
 }
 // Gemini inline request cap ~20MB (base64 inflates ~33%) → keep raw video under ~14MB,
-// else fall back to poster-frame analysis.
+// else fall back to poster-frame analysis. The whole multi-part request is kept
+// under ~16MB so a carousel's slides all fit in one call.
 const MAX_INLINE_VIDEO = 14 * 1024 * 1024;
+const MAX_INLINE_TOTAL = 16 * 1024 * 1024;
+const MAX_ANALYZE_CARDS = 10;
+
+/**
+ * Gather inline media for a CAROUSEL: every card's poster (small → guarantees
+ * all-card visual coverage), then the first card's video if it still fits the
+ * request budget (adds motion/audio/transcript for card 1). Returns the parts in
+ * card order + whether a video was included.
+ */
+async function carouselMedia(ad: AdRow): Promise<{ parts: GeminiMedia[]; includedVideo: boolean; cardCount: number }> {
+  const items = (ad.mediaCardItems ?? []).slice(0, MAX_ANALYZE_CARDS);
+  const parts: GeminiMedia[] = [];
+  let budget = MAX_INLINE_TOTAL;
+  // card posters first (cheap; cover every slide)
+  for (const c of items) {
+    if (!c.image) continue;
+    try {
+      const buf = await downloadFromStorage(c.image);
+      if (buf.length > budget) continue;
+      budget -= buf.length;
+      parts.push({ base64: buf.toString("base64"), mimeType: mimeFor(c.image) });
+    } catch {
+      /* skip a missing card */
+    }
+  }
+  // then the first card's video, if there's room
+  let includedVideo = false;
+  const firstVideo = items.find((c) => c.video)?.video;
+  if (firstVideo) {
+    try {
+      const buf = await downloadFromStorage(firstVideo);
+      if (buf.length <= Math.min(MAX_INLINE_VIDEO, budget)) {
+        parts.push({ base64: buf.toString("base64"), mimeType: videoMimeFor(firstVideo) });
+        includedVideo = true;
+      }
+    } catch {
+      /* skip */
+    }
+  }
+  return { parts, includedVideo, cardCount: ad.mediaCardItems?.length ?? items.length };
+}
 
 async function analyzeOne(ad: AdRow, cache: Map<string, string>): Promise<void> {
   let geminiDesc = "";
   let analyzedVideo = false;
   try {
-    if (ad.videoPath) {
+    // Carousel → analyse ALL cards (every poster + first card's video) in one call.
+    if (ad.mediaType === "carousel" && (ad.mediaCardItems?.length ?? 0) > 0) {
+      const { parts, includedVideo, cardCount } = await carouselMedia(ad);
+      if (parts.length) {
+        analyzedVideo = includedVideo;
+        geminiDesc = await callGemini({
+          prompt:
+            `This competitor ad is a CAROUSEL of ${cardCount} cards (slides). The media below are the cards in order` +
+            `${includedVideo ? ", followed by the video of the first card" : ""}. ` +
+            "For EACH card, describe what's shown and any on-screen text. Then summarise: the visual hook on card 1, how the message/story builds across the cards, " +
+            `${includedVideo ? "any spoken/voiceover lines (transcribe verbatim), " : ""}and the closing CTA/offer.`,
+          media: parts,
+          maxOutputTokens: 1800,
+          systemKey: SYSTEM_KEY,
+          brandId: ad.brandId,
+        });
+      }
+    }
+    if (!geminiDesc && ad.videoPath) {
       const buf = await downloadFromStorage(ad.videoPath);
       if (buf.length <= MAX_INLINE_VIDEO) {
         analyzedVideo = true;

@@ -4,9 +4,11 @@ import { recordUsage, computeTokenCost } from "@/lib/usage";
 
 const MODEL = "gemini-2.5-flash";
 
+export type GeminiMedia = { base64: string; mimeType: string };
 export type CallGeminiParams = {
   prompt: string;
-  media?: { base64: string; mimeType: string };
+  /** A single inline media part, or several (e.g. every card of a carousel). */
+  media?: GeminiMedia | GeminiMedia[];
   maxOutputTokens?: number;
   systemKey?: string;
   brandId?: string;
@@ -19,7 +21,8 @@ export async function callGemini(params: CallGeminiParams): Promise<string> {
 
   const parts: Record<string, unknown>[] = [{ text: params.prompt }];
   if (params.media) {
-    parts.push({ inlineData: { mimeType: params.media.mimeType, data: params.media.base64 } });
+    const items = Array.isArray(params.media) ? params.media : [params.media];
+    for (const m of items) parts.push({ inlineData: { mimeType: m.mimeType, data: m.base64 } });
   }
   const body = JSON.stringify({
     contents: [{ parts }],
