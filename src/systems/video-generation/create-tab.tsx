@@ -35,11 +35,38 @@ export function CreateTab({ brandId, generations, reload }: { brandId: string; g
   const [variations, setVariations] = useState(1);
   const [running, setRunning] = useState(false);
   const [lastBatchId, setLastBatchId] = useState<string | null>(null);
+  const [remakeNote, setRemakeNote] = useState<string[] | null>(null);
 
   useEffect(() => {
     fetch(`/api/brands/${brandId}/product-media`).then((r) => (r.ok ? r.json() : { media: {} })).then((d) => setProductMedia(d.media ?? {})).catch(() => {});
     fetch(`/api/systems/video-generation/characters?brandId=${brandId}`).then((r) => (r.ok ? r.json() : { items: [] })).then((d) => setCharacters(d.items ?? [])).catch(() => {});
     fetch(`/api/systems/video-generation/scenes?brandId=${brandId}`).then((r) => (r.ok ? r.json() : { items: [] })).then((d) => setScenes(d.items ?? [])).catch(() => {});
+  }, [brandId]);
+
+  // Apply a Remake hand-off (sessionStorage) → fill the Script/direction field.
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem("iterio:remake-prefill");
+      if (!raw) return;
+      const p = JSON.parse(raw) as {
+        target?: string; brandId?: string; script?: string; productId?: string | null;
+        duration?: number; aspectRatio?: string; resolution?: string; variationCount?: number;
+        compliance?: { pass?: boolean; failures?: string[] };
+      };
+      if (p.target !== "video" || p.brandId !== brandId || !p.script) return;
+      sessionStorage.removeItem("iterio:remake-prefill");
+      setVideoType("ugc");
+      setScript(p.script);
+      setProductId(p.productId ?? null);
+      if (p.duration) setDuration(p.duration);
+      if (p.aspectRatio) setAspect(p.aspectRatio);
+      if (p.resolution) setResolution(p.resolution);
+      if (p.variationCount) setVariations(p.variationCount);
+      if (p.compliance?.pass === false && p.compliance.failures?.length) setRemakeNote(p.compliance.failures);
+      toast.success("Pre-filled from a competitor remake", { description: "Review the script + product, then Generate." });
+    } catch {
+      /* ignore */
+    }
   }, [brandId]);
 
   const isAroll = videoType === "aroll";
@@ -94,6 +121,13 @@ export function CreateTab({ brandId, generations, reload }: { brandId: string; g
           </span>
           <h3 className="font-display text-base font-medium">Compose</h3>
         </div>
+
+        {remakeNote && (
+          <div className="rounded-xl border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning">
+            <p className="font-medium">Compliance flags to review before generating:</p>
+            <ul className="mt-1 list-disc pl-4">{remakeNote.map((f, i) => <li key={i}>{f}</li>)}</ul>
+          </div>
+        )}
 
         <Field label="Video type">
           <div className="flex flex-wrap gap-2">

@@ -8,7 +8,6 @@ import {
   FileText,
   Search,
   Trophy,
-  Wand2,
   Bookmark,
   BookmarkCheck,
   ChevronDown,
@@ -25,6 +24,7 @@ import { Input } from "@/components/ui/input";
 import { EmptyState } from "@/components/shared/empty-state";
 import type { Concept } from "./ui-types";
 import { tierMeta, titleCase, CONFIDENCE_DOT, mediaLabel, TIER_META } from "./ui-utils";
+import { RemakeButton } from "./remake-button";
 
 const MEDIA_ICON: Record<string, React.ReactNode> = {
   video: <Play className="size-3" />,
@@ -36,22 +36,22 @@ const MEDIA_ICON: Record<string, React.ReactNode> = {
 type Sort = "score" | "variants" | "recency";
 
 export function WinnerBoardTab({
+  brandId,
   concepts,
   momentum,
   loading,
   hasActiveJob,
   onViewVariants,
   onSaveSwipe,
-  onRemake,
   savedConceptIds,
 }: {
+  brandId: string;
   concepts: Concept[];
   momentum: Concept[];
   loading: boolean;
   hasActiveJob: boolean;
   onViewVariants: (c: Concept) => void;
   onSaveSwipe: (conceptId: string) => void;
-  onRemake: (c: Concept) => void;
   savedConceptIds: Set<string>;
 }) {
   const [search, setSearch] = useState("");
@@ -226,10 +226,10 @@ export function WinnerBoardTab({
             <WinnerCard
               key={c.id}
               c={c}
+              brandId={brandId}
               saved={savedConceptIds.has(c.id)}
               onViewVariants={() => onViewVariants(c)}
               onSaveSwipe={() => onSaveSwipe(c.id)}
-              onRemake={() => onRemake(c)}
             />
           ))}
         </div>
@@ -285,16 +285,16 @@ function ScoreBadge({ c }: { c: Concept }) {
 
 function WinnerCard({
   c,
+  brandId,
   saved,
   onViewVariants,
   onSaveSwipe,
-  onRemake,
 }: {
   c: Concept;
+  brandId: string;
   saved: boolean;
   onViewVariants: () => void;
   onSaveSwipe: () => void;
-  onRemake: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const ab = c.angleBank;
@@ -362,9 +362,7 @@ function WinnerCard({
 
         {/* footer actions */}
         <div className="mt-auto flex items-center gap-1.5 border-t border-border/60 pt-2.5">
-          <Button size="sm" className="cta-glow" onClick={onRemake}>
-            <Wand2 className="size-3.5" /> Remake
-          </Button>
+          <RemakeButton concept={c} brandId={brandId} />
           <Button size="sm" variant={saved ? "outline" : "ghost"} onClick={onSaveSwipe} disabled={saved} aria-label={saved ? "Saved to swipe" : "Save to swipe"}>
             {saved ? <BookmarkCheck className="size-3.5" /> : <Bookmark className="size-3.5" />}
           </Button>

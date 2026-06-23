@@ -12,7 +12,6 @@ import { WinnerBoardTab } from "./winner-board-tab";
 import { LibraryTab } from "./library-tab";
 import { CompetitorsTab } from "./competitors-tab";
 import { AdDetailModal } from "./ad-detail-modal";
-import { RemakeDialog } from "./remake-dialog";
 
 const ACTIVE = ["pending", "running", "ingesting", "analyzing", "scoring"];
 const STATUS_LABEL: Record<string, string> = {
@@ -34,8 +33,6 @@ export default function CompetitorResearchSystem({ brandId }: { brandId: string 
   const [running, setRunning] = useState(false);
   const [count, setCount] = useState(20); // ads-per-scrape, shared by quick-scrape + per-source refresh
   const [selected, setSelected] = useState<Ad | null>(null);
-  const [remakeConcept, setRemakeConcept] = useState<Concept | null>(null);
-  const [products, setProducts] = useState<{ id: string; name: string; image: string | null }[]>([]);
 
   const activeJob = useMemo(() => jobs.find((j) => ACTIVE.includes(j.status)) ?? null, [jobs]);
 
@@ -78,18 +75,6 @@ export default function CompetitorResearchSystem({ brandId }: { brandId: string 
     loadSources();
     loadSwipes();
   }, [load, loadConcepts, loadSources, loadSwipes]);
-
-  // brand products (for the Remake dialog's product picker)
-  useEffect(() => {
-    fetch(`/api/brands/${brandId}/product-media`)
-      .then((r) => (r.ok ? r.json() : { media: {} }))
-      .then((d) =>
-        setProducts(
-          Object.entries(d.media ?? {}).map(([id, m]) => ({ id, name: (m as { name?: string }).name ?? "Product", image: (m as { image?: string | null }).image ?? null }))
-        )
-      )
-      .catch(() => {});
-  }, [brandId]);
 
   // Drive the pipeline forward while a job is active (cron is the prod backstop).
   useEffect(() => {
@@ -197,13 +182,13 @@ export default function CompetitorResearchSystem({ brandId }: { brandId: string 
 
         <TabsContent value="board">
           <WinnerBoardTab
+            brandId={brandId}
             concepts={concepts}
             momentum={momentum}
             loading={conceptsLoading}
             hasActiveJob={!!activeJob}
             onViewVariants={onViewVariants}
             onSaveSwipe={onSaveSwipe}
-            onRemake={setRemakeConcept}
             savedConceptIds={savedConceptIds}
           />
         </TabsContent>
@@ -229,7 +214,6 @@ export default function CompetitorResearchSystem({ brandId }: { brandId: string 
       </Tabs>
 
       <AdDetailModal key={selected?.id ?? "none"} ad={selected} onClose={() => setSelected(null)} />
-      <RemakeDialog key={remakeConcept?.id ?? "no-remake"} concept={remakeConcept} brandId={brandId} products={products} onClose={() => setRemakeConcept(null)} />
     </div>
   );
 }

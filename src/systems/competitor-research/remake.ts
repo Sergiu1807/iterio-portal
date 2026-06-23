@@ -1,12 +1,10 @@
 import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
-import { and, asc, eq, sql } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
 import { callClaude, toolResult } from "@/lib/providers/claude";
 import { callGemini } from "@/lib/providers/gemini";
-import { downloadFromStorage } from "@/lib/storage";
-import { startGeneration } from "@/systems/static-generation/generate";
-import { startVideoBatch } from "@/systems/video-generation/generate";
+import { downloadFromStorage, signedUrl } from "@/lib/storage";
 
 const SYSTEM_KEY = "competitor-research";
 const MAX_INLINE_VIDEO = 14 * 1024 * 1024;
@@ -14,16 +12,7 @@ const MAX_INLINE_VIDEO = 14 * 1024 * 1024;
 type AdRow = typeof schema.competitorAds.$inferSelect;
 type AngleBankRow = typeof schema.angleBankEntries.$inferSelect;
 type Product = { name: string; keyBenefits: string | null };
-
-/** Thrown when the compliance gate blocks a remake — carries the failed checks. */
-export class GateError extends Error {
-  failures: string[];
-  constructor(failures: string[]) {
-    super("Compliance gate failed");
-    this.name = "GateError";
-    this.failures = failures;
-  }
-}
+type Compliance = { pass: boolean; failures: string[] };
 
 async function brandIntel(brandId: string): Promise<{ name: string; category: string | null; voice: string }> {
   const [b] = await db
@@ -41,6 +30,13 @@ async function brandIntel(brandId: string): Promise<{ name: string; category: st
   return { name: b?.name ?? "our brand", category: b?.category ?? null, voice };
 }
 
+/** Auto-pick the product to feature: the hero, else the first, else none. */
+async function heroProductId(brandId: string): Promise<string | null> {
+  const rows = await db.select({ id: schema.products.id, isHero: schema.products.isHero }).from(schema.products).where(eq(schema.products.brandId, brandId));
+  if (!rows.length) return null;
+  return (rows.find((r) => r.isHero) ?? rows[0]).id;
+}
+
 async function loadProduct(brandId: string, productId?: string | null): Promise<Product | null> {
   if (!productId) return null;
   const [p] = await db
@@ -51,7 +47,11 @@ async function loadProduct(brandId: string, productId?: string | null): Promise<
   return p ?? null;
 }
 
-// ── 1. adapt the winner copy to our brand (Static) ──────────────────────────
+async function markApproved(angleBankId: string): Promise<void> {
+  await db.update(schema.angleBankEntries).set({ status: "approved", updatedAt: new Date() }).where(eq(schema.angleBankEntries.id, angleBankId));
+}
+
+// ── adapt the winner copy to our brand (Static) ─────────────────────────────
 const COPY_TOOL: Anthropic.Tool = {
   name: "emit_adapted_copy",
   description: "Return the winning ad's copy re-expressed for OUR brand.",
@@ -97,7 +97,7 @@ async function adaptCopy(brandId: string, ad: AdRow, bank: AngleBankRow, product
   return `${a.headline}\n\n${a.primary_text}`.trim();
 }
 
-// ── 2. deep video analysis + brief (Video) ──────────────────────────────────
+// ── deep video analysis + brief (Video) ─────────────────────────────────────
 function videoMime(path: string): string {
   if (path.endsWith(".webm")) return "video/webm";
   if (path.endsWith(".mov")) return "video/quicktime";
@@ -167,7 +167,7 @@ async function composeVideoBrief(brandId: string, deep: string, ad: AdRow, bank:
   return a.brief.trim();
 }
 
-// ── 3. adversarial compliance gate ──────────────────────────────────────────
+// ── adversarial compliance gate (advisory in the hand-off flow) ─────────────
 const GATE_TOOL: Anthropic.Tool = {
   name: "emit_verdict",
   description: "Return the compliance verdict.",
@@ -181,7 +181,7 @@ const GATE_TOOL: Anthropic.Tool = {
   },
 };
 
-async function complianceGate(brandId: string, kind: string, content: string, sourceFlags: string[]): Promise<{ pass: boolean; failures: string[] }> {
+async function complianceGate(brandId: string, kind: string, content: string, sourceFlags: string[]): Promise<Compliance> {
   const intel = await brandIntel(brandId);
   const resp = await callClaude({
     model: "claude-sonnet-4-6",
@@ -204,67 +204,70 @@ async function complianceGate(brandId: string, kind: string, content: string, so
     systemKey: SYSTEM_KEY,
     brandId,
   });
-  const v = toolResult<{ pass: boolean; failures: string[] }>(resp, "emit_verdict");
+  const v = toolResult<Compliance>(resp, "emit_verdict");
   if (!v) return { pass: false, failures: ["Compliance check could not be completed."] };
   return { pass: !!v.pass, failures: Array.isArray(v.failures) ? v.failures : [] };
 }
 
-async function linkGeneration(angleBankId: string, batchId: string): Promise<void> {
-  await db
-    .update(schema.angleBankEntries)
-    .set({
-      usedInGenerations: sql`${schema.angleBankEntries.usedInGenerations} || ${JSON.stringify([batchId])}::jsonb`,
-      status: "approved", // remaking a winner implies approving its angle
-      updatedAt: new Date(),
-    })
-    .where(eq(schema.angleBankEntries.id, angleBankId));
-}
+// ── prepare a prefill for the EXISTING Static/Video Create form ──────────────
+export type StaticPrefill = {
+  target: "static";
+  brandId: string;
+  conceptId: string;
+  referencePath: string;
+  referenceUrl: string | null;
+  adCopy: string;
+  productId: string | null;
+  aspectRatios: string[];
+  variationCount: number;
+  resolution: string;
+  compliance: Compliance;
+};
+export type VideoPrefill = {
+  target: "video";
+  brandId: string;
+  conceptId: string;
+  script: string;
+  productId: string | null;
+  videoType: "ugc";
+  duration: number;
+  aspectRatio: string;
+  resolution: string;
+  variationCount: number;
+  compliance: Compliance;
+};
 
-// ── orchestration: compose → gate → existing generator ──────────────────────
-export type StaticRemakeOpts = { productId?: string | null; aspectRatios?: string[]; variationCount?: number; resolution?: string };
-export type VideoRemakeOpts = { productId?: string | null; duration?: number; aspectRatio?: string; resolution?: string; variationCount?: number };
-
-/** Static: competitor image as the reference + adapted winner copy → existing Reference-mode pipeline. */
-export async function remakeStatic(brandId: string, ad: AdRow, bank: AngleBankRow, opts: StaticRemakeOpts): Promise<{ batchId: string; ids: string[] }> {
+/** Static: competitor image as the reference + adapted winner copy → prefill the Reference-mode Create form. */
+export async function prepareStaticRemake(brandId: string, conceptId: string, ad: AdRow, bank: AngleBankRow): Promise<StaticPrefill> {
   if (!ad.primaryThumbnail) throw new Error("This winner has no stored image to use as a reference.");
-  const product = await loadProduct(brandId, opts.productId);
+  const productId = await heroProductId(brandId);
+  const product = await loadProduct(brandId, productId);
   const adCopy = await adaptCopy(brandId, ad, bank, product);
-  const gate = await complianceGate(brandId, "static ad copy", adCopy, bank.complianceFlags ?? []);
-  if (!gate.pass) throw new GateError(gate.failures);
-  const res = await startGeneration({
+  const compliance = await complianceGate(brandId, "static ad copy", adCopy, bank.complianceFlags ?? []);
+  await markApproved(bank.id);
+  return {
+    target: "static",
     brandId,
-    referencePath: ad.primaryThumbnail, // the competitor creative, already in our bucket
-    productId: opts.productId ?? null,
+    conceptId,
+    referencePath: ad.primaryThumbnail, // already in our bucket; the Create form analyzes it as the reference
+    referenceUrl: await signedUrl(ad.primaryThumbnail),
     adCopy,
-    aspectRatios: opts.aspectRatios?.length ? opts.aspectRatios : ["1:1", "4:5"],
-    variationCount: opts.variationCount ?? 2,
-    resolution: opts.resolution ?? "2K",
-  });
-  await linkGeneration(bank.id, res.batchId);
-  return res;
+    productId,
+    aspectRatios: ["1:1", "4:5"],
+    variationCount: 2,
+    resolution: "2K",
+    compliance,
+  };
 }
 
-/** Video: deep 1:1 analysis + marketing teardown → adapted Script/direction brief → existing video pipeline. */
-export async function remakeVideo(brandId: string, ad: AdRow, bank: AngleBankRow, opts: VideoRemakeOpts): Promise<{ batchId: string; ids: string[] }> {
-  const product = await loadProduct(brandId, opts.productId);
-  const duration = opts.duration ?? 10;
+/** Video: deep 1:1 analysis + teardown → adapted Script/direction brief → prefill the Video Create form. */
+export async function prepareVideoRemake(brandId: string, conceptId: string, ad: AdRow, bank: AngleBankRow): Promise<VideoPrefill> {
+  const productId = await heroProductId(brandId);
+  const product = await loadProduct(brandId, productId);
+  const duration = 10;
   const deep = await deepVideoAnalysis(brandId, ad);
-  const brief = await composeVideoBrief(brandId, deep, ad, bank, product, duration);
-  const gate = await complianceGate(brandId, "video script", brief, bank.complianceFlags ?? []);
-  if (!gate.pass) throw new GateError(gate.failures);
-  const res = await startVideoBatch({
-    brandId,
-    videoType: "ugc",
-    arollStyle: null,
-    productId: opts.productId ?? null,
-    characterIds: [],
-    sceneId: null,
-    script: brief,
-    duration,
-    aspectRatio: opts.aspectRatio ?? "9:16",
-    resolution: opts.resolution ?? "720p",
-    variationCount: opts.variationCount ?? 1,
-  });
-  await linkGeneration(bank.id, res.batchId);
-  return res;
+  const script = await composeVideoBrief(brandId, deep, ad, bank, product, duration);
+  const compliance = await complianceGate(brandId, "video script", script, bank.complianceFlags ?? []);
+  await markApproved(bank.id);
+  return { target: "video", brandId, conceptId, script, productId, videoType: "ugc", duration, aspectRatio: "9:16", resolution: "720p", variationCount: 1, compliance };
 }

@@ -46,6 +46,10 @@ export function CreateTab({
   const [uploading, setUploading] = useState(false);
   const [lastBatchId, setLastBatchId] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  // pre-fill handed over from a Competitor Research "Remake" (the competitor image
+  // shows as a transient selected reference; the adapted copy goes in the Copy field).
+  const [remakeRef, setRemakeRef] = useState<ReferenceItem | null>(null);
+  const [remakeNote, setRemakeNote] = useState<string[] | null>(null);
 
   const loadRefs = useCallback(async () => {
     const r = await fetch(`/api/systems/static-generation/references?brandId=${brandId}`);
@@ -59,6 +63,33 @@ export function CreateTab({
       .then((d) => setProductMedia(d.media ?? {}))
       .catch(() => {});
   }, [brandId, loadRefs]);
+
+  // Apply a Remake hand-off (sessionStorage), if present and for this brand.
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem("iterio:remake-prefill");
+      if (!raw) return;
+      const p = JSON.parse(raw) as {
+        target?: string; brandId?: string; referencePath?: string; referenceUrl?: string | null; adCopy?: string;
+        productId?: string | null; aspectRatios?: string[]; variationCount?: number; resolution?: string;
+        compliance?: { pass?: boolean; failures?: string[] };
+      };
+      if (p.target !== "static" || p.brandId !== brandId || !p.referencePath) return;
+      sessionStorage.removeItem("iterio:remake-prefill");
+      setMode("reference");
+      setRemakeRef({ id: "__remake__", name: "Competitor reference", imagePath: p.referencePath, url: p.referenceUrl ?? null, createdAt: new Date().toISOString() });
+      setRefPath(p.referencePath);
+      setAdCopy(p.adCopy ?? "");
+      setProductId(p.productId ?? null);
+      if (p.aspectRatios?.length) setRatios(p.aspectRatios);
+      if (p.variationCount) setVariations(p.variationCount);
+      if (p.resolution) setResolution(p.resolution);
+      if (p.compliance?.pass === false && p.compliance.failures?.length) setRemakeNote(p.compliance.failures);
+      toast.success("Pre-filled from a competitor remake", { description: "Review the reference + copy, then Generate." });
+    } catch {
+      /* ignore */
+    }
+  }, [brandId]);
 
   const uploadRef = async (file: File) => {
     setUploading(true);
@@ -117,6 +148,12 @@ export function CreateTab({
           </span>
           <h3 className="font-display text-base font-medium">Compose</h3>
         </div>
+        {remakeNote && (
+          <div className="rounded-xl border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning">
+            <p className="font-medium">Compliance flags to review before generating:</p>
+            <ul className="mt-1 list-disc pl-4">{remakeNote.map((f, i) => <li key={i}>{f}</li>)}</ul>
+          </div>
+        )}
         {/* product */}
         <Field label="Product">
           <div className="flex flex-wrap gap-2">
@@ -162,7 +199,7 @@ export function CreateTab({
             {/* reference */}
             <Field label="Reference image" hint="Style/composition to follow — required">
               <div className="flex flex-wrap gap-2">
-                {references.map((ref) => (
+                {(remakeRef ? [remakeRef, ...references] : references).map((ref) => (
                   <button
                     key={ref.id}
                     onClick={() => setRefPath(ref.imagePath)}

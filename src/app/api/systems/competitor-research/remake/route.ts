@@ -2,13 +2,14 @@ import { NextResponse } from "next/server";
 import { and, eq } from "drizzle-orm";
 import { requireAuth, isAuthError } from "@/lib/auth";
 import { db, schema } from "@/lib/db";
-import { GateError, remakeStatic, remakeVideo } from "@/systems/competitor-research/remake";
+import { prepareStaticRemake, prepareVideoRemake } from "@/systems/competitor-research/remake";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 120; // deep analysis + compose + gate + submit
+export const maxDuration = 120; // deep analysis + compose + gate
 
-/** Remake a winning concept into on-brand variants via the existing Static
- *  (Reference mode) or Video pipeline. Compliance-gated before anything generates. */
+/** Prepare an on-brand remake of a winning concept → returns a prefill payload for
+ *  the EXISTING Static (Reference mode) or Video Create form. Generation happens
+ *  when the user reviews and hits Generate there. The compliance gate is advisory. */
 export async function POST(req: Request) {
   const auth = await requireAuth();
   if (isAuthError(auth)) return auth;
@@ -16,23 +17,18 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Insufficient permissions" }, { status: 403 });
   }
 
-  const body = (await req.json()) as {
-    brandId?: string;
-    conceptId?: string;
-    target?: "static" | "video";
-    productId?: string | null;
-    aspectRatios?: string[];
-    aspectRatio?: string;
-    variationCount?: number;
-    resolution?: string;
-    duration?: number;
-  };
+  const body = (await req.json()) as { brandId?: string; conceptId?: string; target?: "static" | "video" };
   const target = body.target === "video" ? "video" : "static";
   if (!body.brandId || !body.conceptId) {
     return NextResponse.json({ error: "brandId and conceptId are required" }, { status: 400 });
   }
 
-  // concept (scoped to brand) → its Angle Bank entry → its representative ad
+  // For Static, the brand's Static system must be set up (the Create form needs its config).
+  if (target === "static") {
+    const [cfg] = await db.select({ id: schema.staticAdConfig.id }).from(schema.staticAdConfig).where(eq(schema.staticAdConfig.brandId, body.brandId)).limit(1);
+    if (!cfg) return NextResponse.json({ error: "Set up the Static system for this brand first (Static → Set up)." }, { status: 400 });
+  }
+
   const [concept] = await db
     .select()
     .from(schema.conceptClusters)
@@ -49,29 +45,11 @@ export async function POST(req: Request) {
   if (!ad) return NextResponse.json({ error: "Representative ad not found." }, { status: 400 });
 
   try {
-    const res =
-      target === "video"
-        ? await remakeVideo(body.brandId, ad, bank, {
-            productId: body.productId ?? null,
-            duration: body.duration,
-            aspectRatio: body.aspectRatio,
-            resolution: body.resolution,
-            variationCount: body.variationCount,
-          })
-        : await remakeStatic(body.brandId, ad, bank, {
-            productId: body.productId ?? null,
-            aspectRatios: body.aspectRatios,
-            variationCount: body.variationCount,
-            resolution: body.resolution,
-          });
-    return NextResponse.json({ ...res, target });
+    const prefill = target === "video" ? await prepareVideoRemake(body.brandId, concept.id, ad, bank) : await prepareStaticRemake(body.brandId, concept.id, ad, bank);
+    return NextResponse.json(prefill);
   } catch (e) {
-    if (e instanceof GateError) {
-      return NextResponse.json({ error: "Blocked by the compliance gate.", failures: e.failures }, { status: 422 });
-    }
     const msg = String((e as Error)?.message ?? e);
-    // "Static system is not set up" / "no stored image" → a fixable 400, not a 500
-    const status = /not set up|no stored image|not found/i.test(msg) ? 400 : 502;
+    const status = /no stored image|not found/i.test(msg) ? 400 : 502;
     return NextResponse.json({ error: msg.slice(0, 300) }, { status });
   }
 }
