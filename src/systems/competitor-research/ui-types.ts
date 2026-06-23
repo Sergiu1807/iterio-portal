@@ -88,5 +88,6 @@ export type Source = {
   metaPageId: string | null;
   type: string | null;
   isActive: boolean;
+  radarEnabled: boolean;
   lastScrapedAt: string | null;
 };

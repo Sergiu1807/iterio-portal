@@ -1,0 +1,1 @@
+ALTER TABLE "competitors" ADD COLUMN "radar_enabled" boolean DEFAULT false NOT NULL;

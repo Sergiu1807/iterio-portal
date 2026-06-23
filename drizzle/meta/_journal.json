@@ -57,6 +57,13 @@
       "when": 1782208436996,
       "tag": "0007_acoustic_william_stryker",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1782213164538,
+      "tag": "0008_rich_steve_rogers",
+      "breakpoints": true
     }
   ]
 }

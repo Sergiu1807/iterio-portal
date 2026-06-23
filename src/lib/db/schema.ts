@@ -141,6 +141,7 @@ export const competitors = pgTable(
     type: text("type"),
     niche: text("niche"), // inferred/curated; the swipe library compounds per niche
     isActive: boolean("is_active").notNull().default(true),
+    radarEnabled: boolean("radar_enabled").notNull().default(false), // pin for the weekly radar re-scrape
     lastScrapedAt: timestamp("last_scraped_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),

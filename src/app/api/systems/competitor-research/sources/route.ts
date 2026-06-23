@@ -55,7 +55,7 @@ export async function PATCH(req: Request) {
   const { id, ...patch } = (await req.json()) as { id?: string } & Record<string, unknown>;
   if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
   const allowed: Record<string, unknown> = {};
-  for (const k of ["name", "metaLibraryUrl", "country", "metaPageId", "metaSearchTerms", "websiteUrl", "type", "isActive"]) {
+  for (const k of ["name", "metaLibraryUrl", "country", "metaPageId", "metaSearchTerms", "websiteUrl", "type", "isActive", "radarEnabled", "niche"]) {
     if (k in patch) allowed[k] = patch[k];
   }
   allowed.updatedAt = new Date();

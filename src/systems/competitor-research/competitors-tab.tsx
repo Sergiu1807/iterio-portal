@@ -306,10 +306,19 @@ export function CompetitorsTab({
                       Ad Library <ExternalLink className="size-3" />
                     </a>
                   )}
+                  {s.radarEnabled && (
+                    <span className="inline-flex items-center gap-1 text-primary">
+                      <Radar className="size-3" /> Weekly radar
+                    </span>
+                  )}
                   <span>Last scraped: {timeAgo(s.lastScrapedAt)}</span>
                 </div>
               </div>
               <div className="flex items-center gap-2.5">
+                <label className="flex items-center gap-1.5 text-xs text-muted-foreground" title="Re-scrape this competitor automatically every week">
+                  <Radar className="size-3.5" /> Radar
+                  <Switch checked={s.radarEnabled} onCheckedChange={(v) => patch(s.id, { radarEnabled: v })} aria-label="Weekly radar" />
+                </label>
                 <Button size="sm" variant="outline" disabled={!s.metaLibraryUrl || !s.isActive} onClick={() => onRefresh(s)}>
                   <Play className="size-3.5" /> Refresh
                 </Button>
