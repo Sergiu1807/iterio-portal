@@ -216,8 +216,14 @@ async function ingestOne(job: Job, brandSlug: string, ad: NormalizedAd, existing
       firstSeenActive: sql`coalesce(${schema.competitorAds.firstSeenActive}, ${ad.startDate ?? new Date()})`,
       updatedAt: new Date(),
     };
-    // opportunistic media backfill on re-scrape (fresh, non-expired URLs)
-    if (existing.mediaCaptureFailed && existing.mediaCaptureAttempts < 3) {
+    // Opportunistic media backfill on re-scrape (fresh, non-expired URLs).
+    // Re-capture when the prior pass was flagged failed OR the row simply has no
+    // stored media yet but THIS scrape carries media URLs — the latter heals rows
+    // captured by older logic (e.g. DCO video carousels whose only image is
+    // video_preview_image_url), which a `mediaCaptureFailed`-only guard never re-tried.
+    const adHasMedia = !!(ad.thumbnailUrl || ad.videoUrl || ad.carouselImageUrls.length);
+    const storedMedia = !!(existing.primaryThumbnail || existing.videoPath || existing.mediaCards?.length);
+    if ((existing.mediaCaptureFailed || (!storedMedia && adHasMedia)) && existing.mediaCaptureAttempts < 3) {
       const cap = await captureMedia(brandSlug, ad);
       const newThumb = !existing.primaryThumbnail ? cap.thumbPath : null;
       const newVideo = !existing.videoPath ? cap.videoPath : null;
