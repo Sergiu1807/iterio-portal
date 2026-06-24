@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { Plus, Trash2, Loader2, ArrowRight, Save } from "lucide-react";
 import { BentoCard } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input, Label } from "@/components/ui/input";
+import { Input, Label, Textarea } from "@/components/ui/input";
 import type { BrandSource } from "./ui-types";
 
 const REVIEW_SITES = [
@@ -17,7 +17,7 @@ const REVIEW_SITES = [
 type CompRow = { name: string; website: string; metaLibraryUrl: string };
 type RevRow = { site: string; url: string };
 
-export function StepInputs({ brandId, sources, onSaved, onContinue }: { brandId: string; sources: BrandSource[]; onSaved: () => void; onContinue: () => void }) {
+export function StepInputs({ brandId, brandName, sources, onSaved, onContinue }: { brandId: string; brandName: string; sources: BrandSource[]; onSaved: () => void; onContinue: () => void }) {
   const find = (type: string) => sources.find((s) => s.type === type);
   const [website, setWebsite] = useState(find("website")?.url ?? "");
   const [metaUrl, setMetaUrl] = useState(find("meta_ads")?.url ?? "");
@@ -27,6 +27,9 @@ export function StepInputs({ brandId, sources, onSaved, onContinue }: { brandId:
   const [reviews, setReviews] = useState<RevRow[]>(
     sources.filter((s) => ["amazon", "trustpilot", "google_reviews"].includes(s.type)).map((s) => ({ site: s.type, url: s.url ?? "" }))
   );
+  const [redditTerm, setRedditTerm] = useState(find("reddit")?.handle ?? "");
+  const [instagram, setInstagram] = useState(find("social")?.url ?? "");
+  const [emailText, setEmailText] = useState(String(find("email")?.config?.text ?? ""));
   const [saving, setSaving] = useState(false);
 
   const build = () => {
@@ -37,6 +40,9 @@ export function StepInputs({ brandId, sources, onSaved, onContinue }: { brandId:
       out.push({ type: "competitor", url: c.website.trim() || undefined, handle: c.name.trim() || undefined, config: { name: c.name.trim(), metaLibraryUrl: c.metaLibraryUrl.trim() } })
     );
     reviews.filter((r) => r.url.trim()).forEach((r) => out.push({ type: r.site, url: r.url.trim() }));
+    if (redditTerm.trim()) out.push({ type: "reddit", handle: redditTerm.trim() });
+    if (instagram.trim()) out.push({ type: "social", url: instagram.trim() });
+    if (emailText.trim().length > 39) out.push({ type: "email", config: { text: emailText.trim() } });
     return out;
   };
 
@@ -105,6 +111,29 @@ export function StepInputs({ brandId, sources, onSaved, onContinue }: { brandId:
             </Button>
           </div>
         ))}
+      </BentoCard>
+
+      <BentoCard className="space-y-3 p-5">
+        <h3 className="font-display text-base font-medium">Community &amp; social</h3>
+        <div className="space-y-1.5">
+          <Label>Reddit — search term</Label>
+          <Input value={redditTerm} onChange={(e) => setRedditTerm(e.target.value)} placeholder={brandName ? `${brandName} (brand name or topic)` : "Brand name or topic to search on Reddit"} />
+          <p className="text-xs text-muted-foreground">We search Reddit for this term and mine posts + comments for unfiltered community VOC. Leave blank to skip.</p>
+        </div>
+        <div className="space-y-1.5">
+          <Label>Instagram profile URL</Label>
+          <Input value={instagram} onChange={(e) => setInstagram(e.target.value)} placeholder="https://www.instagram.com/brand/" />
+          <p className="text-xs text-muted-foreground">Recent posts → the brand&apos;s own voice (captions) + audience comments (VOC).</p>
+        </div>
+      </BentoCard>
+
+      <BentoCard className="space-y-3 p-5">
+        <h3 className="font-display text-base font-medium">Marketing emails</h3>
+        <div className="space-y-1.5">
+          <Label>Paste representative marketing emails</Label>
+          <Textarea value={emailText} onChange={(e) => setEmailText(e.target.value)} rows={6} placeholder="Paste a few of the brand's marketing/newsletter emails — subject lines + body. We extract voice, signature phrasing, offers and promo mechanics." />
+          <p className="text-xs text-muted-foreground">Optional. You can&apos;t scrape an inbox, so paste a few real emails here (≥ 40 characters).</p>
+        </div>
       </BentoCard>
 
       <div className="flex items-center justify-end gap-2">

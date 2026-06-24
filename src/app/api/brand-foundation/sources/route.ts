@@ -26,10 +26,11 @@ export async function PUT(req: Request) {
   const { brandId, sources } = (await req.json()) as { brandId?: string; sources?: SourceInput[] };
   if (!brandId || !Array.isArray(sources)) return NextResponse.json({ error: "brandId + sources[] required" }, { status: 400 });
 
-  // dedupe by (type, url|handle); drop blank rows
+  // dedupe by (type, url|handle); drop blank rows. Email is paste-based (config.text, no url/handle).
+  const hasText = (s: SourceInput) => String((s.config as { text?: string } | undefined)?.text ?? "").trim().length > 0;
   const seen = new Set<string>();
   const clean = sources
-    .filter((s) => s.type && (s.url?.trim() || s.handle?.trim()))
+    .filter((s) => s.type && (s.url?.trim() || s.handle?.trim() || hasText(s)))
     .filter((s) => {
       const k = `${s.type}:${(s.url ?? s.handle ?? "").trim().toLowerCase()}`;
       if (seen.has(k)) return false;

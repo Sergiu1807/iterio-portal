@@ -98,19 +98,26 @@ export async function synthesizeB3(brandId: string): Promise<void> {
   };
 
   // Deterministic evidence-links: map each B3 section to the source extraction(s) that fed it.
-  const refBySchema = new Map(exts.map((e) => [e.schemaType, e.sourceId]));
-  const ref = (s: string) => (refBySchema.has(s) ? [{ kind: s, sourceId: refBySchema.get(s) ?? undefined }] : []);
+  // Collect ALL sources per schemaType (there can be several `voc` sources: reviews, reddit, social).
+  const refsBySchema = new Map<string, { kind: string; sourceId?: string }[]>();
+  for (const e of exts) {
+    const arr = refsBySchema.get(e.schemaType) ?? [];
+    arr.push({ kind: e.schemaType, sourceId: e.sourceId ?? undefined });
+    refsBySchema.set(e.schemaType, arr);
+  }
+  const ref = (s: string) => refsBySchema.get(s) ?? [];
   const fromSite = ref("website_intel");
+  const fromEmail = ref("email_intel");
   b3.meta.source_refs = {
     brand_snapshot: fromSite,
     positioning: fromSite,
     products: fromSite,
-    offers: fromSite,
+    offers: [...fromEmail, ...fromSite],
     proof_mechanisms: fromSite,
-    voice_profile: fromSite,
+    voice_profile: [...fromEmail, ...fromSite],
     creative_dna: fromSite,
     emotional_triggers: fromSite,
-    channels: fromSite,
+    channels: [...ref("voc"), ...fromSite],
     personas: [...ref("voc"), ...fromSite],
     compliance: ref("compliance"),
   };

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Loader2, RefreshCw, Check, AlertTriangle, Globe, Megaphone, Building2, Star, FileSearch, Sparkles, ArrowRight, ShieldCheck } from "lucide-react";
+import { Loader2, RefreshCw, Check, AlertTriangle, Globe, Megaphone, Building2, Star, FileSearch, Sparkles, ArrowRight, ShieldCheck, MessageSquare, Instagram, Mail } from "lucide-react";
 import { BentoCard } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -15,6 +15,7 @@ type Job = { id: string; sourceId: string | null; module: string; status: string
 const ICON: Record<string, React.ReactNode> = {
   website: <Globe className="size-4" />, meta_ads: <Megaphone className="size-4" />, competitor: <Building2 className="size-4" />,
   amazon: <Star className="size-4" />, trustpilot: <Star className="size-4" />, google_reviews: <Star className="size-4" />,
+  reddit: <MessageSquare className="size-4" />, social: <Instagram className="size-4" />, email: <Mail className="size-4" />,
   compliance: <ShieldCheck className="size-4" />,
 };
 const STATUS: Record<string, { label: string; variant: "muted" | "warning" | "success" | "outline"; spin?: boolean }> = {

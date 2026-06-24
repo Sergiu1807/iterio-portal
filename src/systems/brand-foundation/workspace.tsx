@@ -106,7 +106,7 @@ export default function OnboardingWorkspace({ brandId }: { brandId: string }) {
       {loading ? (
         <div className="flex justify-center py-16"><Loader2 className="size-5 animate-spin text-muted-foreground" /></div>
       ) : step === "inputs" ? (
-        <StepInputs brandId={brandId} sources={sources} onSaved={loadStatus} onContinue={runResearch} />
+        <StepInputs brandId={brandId} brandName={currentBrand?.name ?? ""} sources={sources} onSaved={loadStatus} onContinue={runResearch} />
       ) : step === "research" ? (
         <StepResearch brandId={brandId} sources={sources} jobs={jobs} hasDraft={!!row} onRerun={rerun} onSynthesize={synthesize} onReview={() => setStep("review")} />
       ) : step === "review" ? (

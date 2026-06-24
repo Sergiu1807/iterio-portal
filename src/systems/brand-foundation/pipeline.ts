@@ -6,6 +6,9 @@ import { startScrapeJob } from "@/systems/competitor-research/scrape-job";
 import { isAdLibraryUrl } from "@/systems/competitor-research/meta-url";
 import { runWebsiteJob } from "./modules/website";
 import { runReviewsJob } from "./modules/reviews";
+import { runRedditJob } from "./modules/reddit";
+import { runSocialJob } from "./modules/social";
+import { runEmailJob } from "./modules/email";
 import { runComplianceJob } from "./modules/compliance";
 import { WaitError } from "./modules/wait-error";
 
@@ -13,8 +16,11 @@ const MAX_ATTEMPTS = 3;
 const TERMINAL_SOURCE = ["complete", "failed", "partial"];
 const REVIEW_TYPES = ["amazon", "trustpilot", "google_reviews"];
 const DELEGATED_TYPES = ["meta_ads", "competitor"];
-// User-input source types with a live module; others (social/reddit/email/upload) are deferred → "partial".
-const LIVE_INPUT_TYPES = ["website", ...DELEGATED_TYPES, ...REVIEW_TYPES];
+// Source type → the internal extract module that runs it.
+const EXTRACT_MODULE: Record<string, string> = { website: "website", amazon: "reviews", trustpilot: "reviews", google_reviews: "reviews", reddit: "reddit", social: "social", email: "email" };
+const MODULE_PROVIDER: Record<string, string> = { website: "claude", reviews: "apify", reddit: "apify", social: "apify", email: "claude" };
+// User-input source types with a live module; others (upload) are deferred → "partial".
+const LIVE_INPUT_TYPES = ["website", ...DELEGATED_TYPES, ...REVIEW_TYPES, "reddit", "social", "email"];
 
 type SourceRow = typeof schema.brandSources.$inferSelect;
 type JobRow = typeof schema.researchJobs.$inferSelect;
@@ -30,6 +36,9 @@ const setJob = (id: string, patch: Partial<JobRow>) => db.update(schema.research
 const RUNNERS: Record<string, (job: JobRow, source: SourceRow) => Promise<void>> = {
   website: runWebsiteJob,
   reviews: runReviewsJob,
+  reddit: runRedditJob,
+  social: runSocialJob,
+  email: runEmailJob,
   compliance: runComplianceJob,
 };
 
@@ -69,15 +78,14 @@ async function ensureComplianceJob(brandId: string): Promise<void> {
 async function dispatchSource(brandId: string, s: SourceRow): Promise<void> {
   if (!LIVE_INPUT_TYPES.includes(s.type)) { await setSource(s.id, { status: "partial", lastError: "Module arrives in a later build" }); return; }
   await db.delete(schema.researchJobs).where(eq(schema.researchJobs.sourceId, s.id));
-  if (s.type === "website") {
-    await setSource(s.id, { status: "running", lastRunAt: new Date(), lastError: null });
-    await db.insert(schema.researchJobs).values({ brandId, sourceId: s.id, module: "website", type: "extract", status: "pending", provider: "claude" });
-  } else if (REVIEW_TYPES.includes(s.type)) {
-    await setSource(s.id, { status: "running", lastRunAt: new Date(), lastError: null });
-    await db.insert(schema.researchJobs).values({ brandId, sourceId: s.id, module: "reviews", type: "extract", status: "pending", provider: "apify" });
-  } else {
+  if (DELEGATED_TYPES.includes(s.type)) {
     try { await delegateScrape(brandId, s); } catch (e) { await setSource(s.id, { status: "failed", lastError: String((e as Error)?.message ?? e).slice(0, 300) }); }
+    return;
   }
+  const mod = EXTRACT_MODULE[s.type];
+  if (!mod) { await setSource(s.id, { status: "partial", lastError: "Module arrives in a later build" }); return; }
+  await setSource(s.id, { status: "running", lastRunAt: new Date(), lastError: null });
+  await db.insert(schema.researchJobs).values({ brandId, sourceId: s.id, module: mod, type: "extract", status: "pending", provider: MODULE_PROVIDER[mod] ?? "claude" });
 }
 
 /** Create jobs for every enabled source + fan out the delegated scrapes + auto compliance. */
@@ -119,7 +127,7 @@ async function claimAndRunExtract(brandId?: string, limit = 3): Promise<number> 
     UPDATE research_jobs SET status = 'running', attempts = attempts + 1, updated_at = now()
     WHERE id IN (
       SELECT id FROM research_jobs
-      WHERE module IN ('website','reviews','compliance') AND type = 'extract' AND status = 'pending' AND attempts < ${MAX_ATTEMPTS} ${brandFilter}
+      WHERE module IN ('website','reviews','compliance','reddit','social','email') AND type = 'extract' AND status = 'pending' AND attempts < ${MAX_ATTEMPTS} ${brandFilter}
       ORDER BY created_at ASC LIMIT ${limit} FOR UPDATE SKIP LOCKED
     ) RETURNING id`);
   const ids = (claimed as unknown as { id: string }[]).map((r) => r.id);
