@@ -4,16 +4,14 @@ import { and, eq } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
 import { callClaude, toolResult } from "@/lib/providers/claude";
 import { callGemini } from "@/lib/providers/gemini";
+// WaitError moved to a shared module (used by reviews too); re-export for existing importers.
+import { WaitError } from "./wait-error";
+export { WaitError };
 
 const SYSTEM_KEY = "brand-onboarding";
 
 type SourceRow = typeof schema.brandSources.$inferSelect;
 type JobRow = typeof schema.researchJobs.$inferSelect;
-
-/** Signals the pipeline to requeue this job (a dependency isn't ready) without burning an attempt. */
-export class WaitError extends Error {
-  constructor() { super("waiting for dependency"); this.name = "WaitError"; }
-}
 
 const COMPLIANCE_TOOL: Anthropic.Tool = {
   name: "emit_compliance",

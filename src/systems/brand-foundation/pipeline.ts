@@ -6,7 +6,8 @@ import { startScrapeJob } from "@/systems/competitor-research/scrape-job";
 import { isAdLibraryUrl } from "@/systems/competitor-research/meta-url";
 import { runWebsiteJob } from "./modules/website";
 import { runReviewsJob } from "./modules/reviews";
-import { runComplianceJob, WaitError } from "./modules/compliance";
+import { runComplianceJob } from "./modules/compliance";
+import { WaitError } from "./modules/wait-error";
 
 const MAX_ATTEMPTS = 3;
 const TERMINAL_SOURCE = ["complete", "failed", "partial"];
@@ -73,7 +74,7 @@ async function dispatchSource(brandId: string, s: SourceRow): Promise<void> {
     await db.insert(schema.researchJobs).values({ brandId, sourceId: s.id, module: "website", type: "extract", status: "pending", provider: "claude" });
   } else if (REVIEW_TYPES.includes(s.type)) {
     await setSource(s.id, { status: "running", lastRunAt: new Date(), lastError: null });
-    await db.insert(schema.researchJobs).values({ brandId, sourceId: s.id, module: "reviews", type: "extract", status: "pending", provider: "tavily" });
+    await db.insert(schema.researchJobs).values({ brandId, sourceId: s.id, module: "reviews", type: "extract", status: "pending", provider: "apify" });
   } else {
     try { await delegateScrape(brandId, s); } catch (e) { await setSource(s.id, { status: "failed", lastError: String((e as Error)?.message ?? e).slice(0, 300) }); }
   }

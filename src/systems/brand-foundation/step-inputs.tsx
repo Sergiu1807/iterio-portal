@@ -93,7 +93,7 @@ export function StepInputs({ brandId, sources, onSaved, onContinue }: { brandId:
             <Plus className="size-4" /> Add
           </Button>
         </div>
-        {reviews.length === 0 && <p className="text-xs text-muted-foreground">Optional — Amazon / Trustpilot / Google review pages for verbatim VOC.</p>}
+        {reviews.length === 0 && <p className="text-xs text-muted-foreground">Optional — paste an Amazon product, Trustpilot company, or Google Maps page URL. We scrape real reviews for verbatim voice-of-customer.</p>}
         {reviews.map((r, i) => (
           <div key={i} className="grid grid-cols-1 gap-2 sm:grid-cols-[160px_1fr_auto]">
             <select value={r.site} onChange={(e) => setReviews((p) => p.map((x, j) => (j === i ? { ...x, site: e.target.value } : x)))} className="h-10 rounded-xl border border-input bg-background/60 px-3 text-sm">
@@ -115,7 +115,7 @@ export function StepInputs({ brandId, sources, onSaved, onContinue }: { brandId:
           Save &amp; run research <ArrowRight className="size-4" />
         </Button>
       </div>
-      <p className="text-center text-xs text-muted-foreground">Website + Meta/competitor sources are researched automatically, then a draft B3 is synthesized for your review. Reviews &amp; compliance arrive in a later build.</p>
+      <p className="text-center text-xs text-muted-foreground">Every source is researched automatically — website crawl, Meta/competitor ads, real review scrapes for VOC, and a compliance check — then a draft B3 is synthesized for your review.</p>
     </div>
   );
 }
