@@ -174,7 +174,9 @@ export async function pollDelegatedAll(): Promise<void> { await advanceDelegated
 export async function extractAll(): Promise<void> {
   await claimAndRunExtract(undefined, 4);
   const brands = await db.selectDistinct({ brandId: schema.brandSources.brandId }).from(schema.brandSources);
-  for (const b of brands) await maybeSynthesize(b.brandId);
+  for (const b of brands) {
+    try { await maybeSynthesize(b.brandId); } catch (e) { console.warn("[brand-foundation] synthesis failed", b.brandId, String(e).slice(0, 200)); }
+  }
 }
 export async function sweepStuck(): Promise<void> {
   const cutoff = new Date(Date.now() - 30 * 60_000);

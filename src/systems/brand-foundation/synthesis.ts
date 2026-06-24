@@ -73,7 +73,7 @@ export async function synthesizeB3(brandId: string): Promise<void> {
   const resp = await callClaude({
     model: "claude-opus-4-8",
     maxTokens: 8000,
-    temperature: 0.4,
+    // NB: Opus 4.8 rejects `temperature` ("deprecated for this model") — omit it.
     timeoutMs: 180_000,
     system:
       "You are a senior brand strategist. Think step by step, then synthesize the supplied research evidence into a Brand Intelligence (B3) object. " +

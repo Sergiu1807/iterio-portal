@@ -56,14 +56,21 @@ export async function runWebsiteJob(job: JobRow, source: SourceRow): Promise<voi
   try { host = new URL(url).hostname.replace(/^www\./, ""); } catch { /* keep url */ }
 
   const homeText = (await fetchWebsiteText(url, { maxChars: 14000 })) ?? "";
-  const tav = await tavilySearch({
-    query: `${brandName} (${host}) — mission, founder story, products, ingredients, certifications, customer objections`,
-    searchDepth: "advanced",
-    includeAnswer: true,
-    maxResults: 8,
-    systemKey: SYSTEM_KEY,
-    brandId: job.brandId,
-  });
+  // Tavily is enrichment — degrade gracefully if its key is missing or it errors.
+  let tav: { answer: string; results: { title: string; url: string; content: string }[] } = { answer: "", results: [] };
+  try {
+    tav = await tavilySearch({
+      query: `${brandName} (${host}) — mission, founder story, products, ingredients, certifications, customer objections`,
+      searchDepth: "advanced",
+      includeAnswer: true,
+      maxResults: 8,
+      systemKey: SYSTEM_KEY,
+      brandId: job.brandId,
+    });
+  } catch (e) {
+    console.warn("[website] tavily unavailable, using homepage only:", String(e).slice(0, 100));
+  }
+  if (!homeText && !tav.answer && !tav.results.length) throw new Error("No website content could be fetched (page blocked + no web research available)");
 
   // raw artifact for the extraction viewer's Raw tab (text is small enough to inline)
   await db

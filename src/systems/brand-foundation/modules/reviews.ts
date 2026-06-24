@@ -48,14 +48,27 @@ export async function runReviewsJob(job: JobRow, source: SourceRow): Promise<voi
   const brandName = brand?.name ?? "";
 
   const pageText = url ? scrubPII((await fetchWebsiteText(url, { maxChars: 12000 })) ?? "") : "";
-  const tav = await tavilySearch({
-    query: `${brandName} customer reviews on ${site} — what people praise, complaints, before and after, who buys it`,
-    searchDepth: "advanced",
-    includeAnswer: true,
-    maxResults: 10,
-    systemKey: SYSTEM_KEY,
-    brandId: job.brandId,
-  });
+  let tav: { answer: string; results: { title: string; url: string; content: string }[] } = { answer: "", results: [] };
+  try {
+    tav = await tavilySearch({
+      query: `${brandName} customer reviews on ${site} — what people praise, complaints, before and after, who buys it`,
+      searchDepth: "advanced",
+      includeAnswer: true,
+      maxResults: 10,
+      systemKey: SYSTEM_KEY,
+      brandId: job.brandId,
+    });
+  } catch (e) {
+    console.warn("[reviews] tavily unavailable:", String(e).slice(0, 100));
+  }
+  if (!pageText && !tav.answer && !tav.results.length) {
+    // nothing to extract (review pages are bot-protected and no web research) — record a thin, honest result
+    await db
+      .insert(schema.extractions)
+      .values({ brandId: job.brandId, sourceId: source.id, jobId: job.id, schemaType: "voc", json: { verbatim_phrases: [], note: `No accessible review content for ${site} (page blocked + web research unavailable).` }, confidence: "0.100", model: "internal" })
+      .onConflictDoUpdate({ target: [schema.extractions.sourceId, schema.extractions.schemaType], set: { json: { verbatim_phrases: [], note: `No accessible review content for ${site}.` }, jobId: job.id, updatedAt: new Date() } });
+    return;
+  }
   const tavText = scrubPII([tav.answer, ...tav.results.map((r) => `${r.title}: ${r.content}`)].filter(Boolean).join("\n"));
 
   await db
