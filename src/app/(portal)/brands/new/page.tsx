@@ -36,16 +36,19 @@ export default function NewBrandPage() {
   const create = async () => {
     if (!draft) return;
     try {
-      const brand = await addBrand(draft);
-      // The "research" path leads into the foundation workspace to build the B3;
-      // paste/wizard already produced a populated brand → straight to the dashboard.
+      // The "research" path leads into the foundation workspace to build the B3 —
+      // create a CLEAN brand (drop any placeholder sections/products) so the real
+      // researched B3 isn't polluted by pre-onboarding mock data.
       if (draft.onboardingSource === "research") {
+        const clean = { ...draft, sections: [], products: [], personas: [], usps: [], competitors: [] };
+        const brand = await addBrand(clean);
         toast.success(`${brand.name} created`, { description: "Let's build its Brand Intelligence." });
         router.push("/onboarding");
-      } else {
-        toast.success(`${brand.name} added`, { description: "Populated and ready across every system." });
-        router.push("/dashboard");
+        return;
       }
+      const brand = await addBrand(draft);
+      toast.success(`${brand.name} added`, { description: "Populated and ready across every system." });
+      router.push("/dashboard");
     } catch {
       toast.error("Couldn't create brand — try again.");
     }

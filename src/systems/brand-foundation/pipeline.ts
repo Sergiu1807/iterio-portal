@@ -1,6 +1,6 @@
 import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
-import { and, eq, inArray, lt, sql } from "drizzle-orm";
+import { and, eq, gte, inArray, lt, sql } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
 import { startScrapeJob } from "@/systems/competitor-research/scrape-job";
 import { isAdLibraryUrl } from "@/systems/competitor-research/meta-url";
@@ -38,12 +38,13 @@ async function delegateScrape(brandId: string, s: SourceRow): Promise<void> {
   if (s.type === "competitor") {
     const name = String(s.config?.name ?? s.handle ?? "Competitor");
     const metaLib = String(s.config?.metaLibraryUrl ?? "");
-    const [comp] = await db
-      .insert(schema.competitors)
-      .values({ brandId, name, websiteUrl: s.url ?? null, metaLibraryUrl: metaLib || null, type: "Direct", country: "ALL" })
-      .returning({ id: schema.competitors.id });
+    // reuse an existing competitor row for this brand+name (don't duplicate on re-run)
+    const [ex] = await db.select({ id: schema.competitors.id }).from(schema.competitors).where(and(eq(schema.competitors.brandId, brandId), eq(schema.competitors.name, name))).limit(1);
+    const competitorId = ex
+      ? ex.id
+      : (await db.insert(schema.competitors).values({ brandId, name, websiteUrl: s.url ?? null, metaLibraryUrl: metaLib || null, type: "Direct", country: "ALL" }).returning({ id: schema.competitors.id }))[0].id;
     const useUrl = metaLib && isAdLibraryUrl(metaLib);
-    ({ jobId: scrapeJobId } = await startScrapeJob(useUrl ? { brandId, mode: "url", query: metaLib, competitorId: comp.id } : { brandId, mode: "keyword", query: name, competitorId: comp.id }));
+    ({ jobId: scrapeJobId } = await startScrapeJob(useUrl ? { brandId, mode: "url", query: metaLib, competitorId } : { brandId, mode: "keyword", query: name, competitorId }));
   } else {
     const url = s.url ?? "";
     ({ jobId: scrapeJobId } = await startScrapeJob(isAdLibraryUrl(url) ? { brandId, mode: "url", query: url } : { brandId, mode: "keyword", query: url }));
@@ -128,9 +129,15 @@ async function claimAndRunExtract(brandId?: string, limit = 3): Promise<number> 
     const [source] = j.sourceId ? await db.select().from(schema.brandSources).where(eq(schema.brandSources.id, j.sourceId)).limit(1) : [];
     const runner = RUNNERS[j.module];
     if (!source || !runner) { await setJob(j.id, { status: "failed", error: "source/module missing" }); continue; }
+    const t0 = new Date();
     try {
       await runner(j, source);
-      await setJob(j.id, { status: "complete" });
+      // Attribute this runner's provider spend to the job (runners execute sequentially → clean window).
+      const [{ c }] = await db
+        .select({ c: sql<number>`coalesce(sum(${schema.usageEvents.costUsd}),0)`.mapWith(Number) })
+        .from(schema.usageEvents)
+        .where(and(eq(schema.usageEvents.systemKey, "brand-onboarding"), eq(schema.usageEvents.brandId, j.brandId), gte(schema.usageEvents.createdAt, t0)));
+      await setJob(j.id, { status: "complete", costCents: Math.round((c ?? 0) * 100) });
       await setSource(source.id, { status: "complete", lastError: null });
     } catch (e) {
       if (e instanceof WaitError) {

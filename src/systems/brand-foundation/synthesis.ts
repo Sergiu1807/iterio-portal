@@ -72,7 +72,7 @@ export async function synthesizeB3(brandId: string): Promise<void> {
 
   const resp = await callClaude({
     model: "claude-opus-4-8",
-    maxTokens: 8000,
+    maxTokens: 10_000,
     // NB: Opus 4.8 rejects `temperature` ("deprecated for this model") — omit it.
     timeoutMs: 180_000,
     system:
@@ -95,6 +95,24 @@ export async function synthesizeB3(brandId: string): Promise<void> {
     confidence_scores: b3.meta?.confidence_scores ?? {},
     gaps: b3.meta?.gaps ?? (parsed ? [] : [{ field: "all", severity: "high", reason: "Synthesis could not parse a structured B3 — review and fill manually." }]),
     generated_at: new Date().toISOString(),
+  };
+
+  // Deterministic evidence-links: map each B3 section to the source extraction(s) that fed it.
+  const refBySchema = new Map(exts.map((e) => [e.schemaType, e.sourceId]));
+  const ref = (s: string) => (refBySchema.has(s) ? [{ kind: s, sourceId: refBySchema.get(s) ?? undefined }] : []);
+  const fromSite = ref("website_intel");
+  b3.meta.source_refs = {
+    brand_snapshot: fromSite,
+    positioning: fromSite,
+    products: fromSite,
+    offers: fromSite,
+    proof_mechanisms: fromSite,
+    voice_profile: fromSite,
+    creative_dna: fromSite,
+    emotional_triggers: fromSite,
+    channels: fromSite,
+    personas: [...ref("voc"), ...fromSite],
+    compliance: ref("compliance"),
   };
 
   // Fold the structured compliance ruleset in deterministically (don't rely on the LLM to restate it).

@@ -118,7 +118,7 @@ export default function OnboardingWorkspace({ brandId }: { brandId: string }) {
                 <Button size="sm" onClick={editAfterApprove}>Edit → new draft</Button>
               </BentoCard>
             )}
-            <B3Editor row={row} brandId={brandId} readOnly={row.status === "approved"} onReload={loadB3} />
+            <B3Editor key={`${row.id}:${row.version}:${row.status}`} row={row} brandId={brandId} readOnly={row.status === "approved"} onReload={loadB3} />
           </div>
         ) : null
       ) : row ? (

@@ -11,6 +11,28 @@ const SYSTEM_KEY = "brand-onboarding";
 type SourceRow = typeof schema.brandSources.$inferSelect;
 type JobRow = typeof schema.researchJobs.$inferSelect;
 
+type CatalogProduct = { name: string; price?: string; format?: string; desc?: string };
+
+/** Shopify /products.json → structured catalog (reliable; doesn't depend on the LLM). */
+async function shopifyCatalog(origin: string): Promise<{ summary: string; products: CatalogProduct[] }> {
+  try {
+    const res = await fetch(`${origin}/products.json?limit=250`, { signal: AbortSignal.timeout(12_000), headers: { "user-agent": "Mozilla/5.0 (compatible; IterioBot/1.0)" } });
+    if (!res.ok) return { summary: "", products: [] };
+    const data = (await res.json()) as { products?: { title?: string; product_type?: string; body_html?: string; variants?: { price?: string }[] }[] };
+    const raw = Array.isArray(data?.products) ? data.products : [];
+    const products: CatalogProduct[] = raw.slice(0, 50).map((p) => ({
+      name: String(p.title ?? "Product"),
+      price: p.variants?.[0]?.price,
+      format: p.product_type || undefined,
+      desc: String(p.body_html ?? "").replace(/<[^>]+>/g, " ").replace(/&[a-z]+;/gi, " ").replace(/\s+/g, " ").trim().slice(0, 400) || undefined,
+    }));
+    const summary = products.map((p) => `- ${p.name}${p.price ? ` ($${p.price})` : ""}${p.format ? ` [${p.format}]` : ""}${p.desc ? `: ${p.desc}` : ""}`).join("\n");
+    return { summary, products };
+  } catch {
+    return { summary: "", products: [] };
+  }
+}
+
 const WEBSITE_TOOL: Anthropic.Tool = {
   name: "emit_website_intel",
   description: "Structured, evidence-backed brand intelligence extracted from the brand's website + web research.",
@@ -59,6 +81,11 @@ export async function runWebsiteJob(job: JobRow, source: SourceRow): Promise<voi
   // dosage, founder story etc. — not just the homepage.
   const pages = await crawlBrandSite(url, { maxPages: 6, maxCharsPerPage: 5000 });
   const homeText = pages.map((p) => `[${p.url}]\n${p.text}`).join("\n\n").slice(0, 18000);
+  // Shopify storefronts expose a structured catalog at /products.json — pulls the
+  // FULL product list with prices + descriptions (often the ingredient/dosage copy).
+  let origin = "";
+  try { origin = new URL(url).origin; } catch { /* ignore */ }
+  const catalog = origin ? await shopifyCatalog(origin) : { summary: "", products: [] };
   // Tavily is enrichment — degrade gracefully if its key is missing or it errors.
   let tav: { answer: string; results: { title: string; url: string; content: string }[] } = { answer: "", results: [] };
   try {
@@ -88,6 +115,7 @@ export async function runWebsiteJob(job: JobRow, source: SourceRow): Promise<voi
     .onConflictDoNothing();
 
   const context = [
+    catalog.summary ? `STORE CATALOG (products.json — the authoritative product list):\n${catalog.summary}` : "",
     homeText ? `SITE PAGES (${pages.length}):\n${homeText.slice(0, 16000)}` : "(site text unavailable)",
     tav.answer ? `\nWEB RESEARCH SUMMARY:\n${tav.answer}` : "",
     `\nSOURCES:\n${tav.results.map((r) => `- ${r.title} (${r.url}): ${r.content}`).join("\n").slice(0, 4000)}`,
@@ -104,8 +132,23 @@ export async function runWebsiteJob(job: JobRow, source: SourceRow): Promise<voi
     systemKey: SYSTEM_KEY,
     brandId: job.brandId,
   });
-  const out = toolResult<Record<string, unknown> & { field_confidence?: number }>(resp, "emit_website_intel");
+  const out = toolResult<Record<string, unknown> & { field_confidence?: number; products?: { name?: string; ingredients?: string[]; dosage?: string; format?: string; price?: string; claims?: string[] }[] }>(resp, "emit_website_intel");
   if (!out) throw new Error("website extraction returned nothing");
+
+  // Catalog is authoritative for the product LIST: seed from products.json, overlay
+  // Claude's per-product detail (ingredients/dosage/claims) by name. Reliable, not LLM-dependent.
+  if (catalog.products.length) {
+    const byName = new Map((out.products ?? []).map((p) => [String(p.name ?? "").toLowerCase().trim(), p]));
+    const merged = catalog.products.map((cp) => {
+      const cl = byName.get(cp.name.toLowerCase().trim());
+      return { name: cp.name, price: cp.price ?? cl?.price, format: cp.format ?? cl?.format, ingredients: cl?.ingredients ?? [], dosage: cl?.dosage, claims: cl?.claims ?? [] };
+    });
+    // keep any Claude products not present in the catalog (e.g. bundles described only on-page)
+    for (const cl of out.products ?? []) {
+      if (!catalog.products.some((cp) => cp.name.toLowerCase().trim() === String(cl.name ?? "").toLowerCase().trim())) merged.push(cl as (typeof merged)[number]);
+    }
+    out.products = merged.slice(0, 60);
+  }
 
   const confidence = Math.max(0, Math.min(1, typeof out.field_confidence === "number" ? out.field_confidence : 0.6));
   await db
