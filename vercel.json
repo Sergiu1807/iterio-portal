@@ -5,6 +5,9 @@
     { "path": "/api/cron/score", "schedule": "*/2 * * * *" },
     { "path": "/api/cron/sweep-stuck-jobs", "schedule": "*/15 * * * *" },
     { "path": "/api/cron/radar", "schedule": "0 9 * * 1" },
+    { "path": "/api/cron/research-poll", "schedule": "* * * * *" },
+    { "path": "/api/cron/research-extract", "schedule": "*/2 * * * *" },
+    { "path": "/api/cron/research-sweep", "schedule": "*/15 * * * *" },
     { "path": "/api/cron/static-generation", "schedule": "*/2 * * * *" },
     { "path": "/api/cron/video-generation", "schedule": "*/2 * * * *" }
   ]

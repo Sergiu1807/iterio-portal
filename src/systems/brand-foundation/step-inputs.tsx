@@ -112,10 +112,10 @@ export function StepInputs({ brandId, sources, onSaved, onContinue }: { brandId:
           {saving ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />} Save inputs
         </Button>
         <Button className="cta-glow" onClick={() => save(onContinue)} disabled={saving}>
-          Save &amp; build B3 <ArrowRight className="size-4" />
+          Save &amp; run research <ArrowRight className="size-4" />
         </Button>
       </div>
-      <p className="text-center text-xs text-muted-foreground">Automated research runs these sources in a later build — for now they&apos;re saved and you draft the B3 by hand.</p>
+      <p className="text-center text-xs text-muted-foreground">Website + Meta/competitor sources are researched automatically, then a draft B3 is synthesized for your review. Reviews &amp; compliance arrive in a later build.</p>
     </div>
   );
 }
