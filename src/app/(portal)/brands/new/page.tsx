@@ -37,8 +37,15 @@ export default function NewBrandPage() {
     if (!draft) return;
     try {
       const brand = await addBrand(draft);
-      toast.success(`${brand.name} added`, { description: "Populated and ready across every system." });
-      router.push("/dashboard");
+      // The "research" path leads into the foundation workspace to build the B3;
+      // paste/wizard already produced a populated brand → straight to the dashboard.
+      if (draft.onboardingSource === "research") {
+        toast.success(`${brand.name} created`, { description: "Let's build its Brand Intelligence." });
+        router.push("/onboarding");
+      } else {
+        toast.success(`${brand.name} added`, { description: "Populated and ready across every system." });
+        router.push("/dashboard");
+      }
     } catch {
       toast.error("Couldn't create brand — try again.");
     }

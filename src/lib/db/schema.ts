@@ -585,3 +585,163 @@ export const videoGenerations = pgTable(
     index("video_gen_batch_idx").on(t.batchId),
   ]
 );
+
+// =============================================
+// BRAND ONBOARDING & FOUNDATION LAYER (B3)
+// Versioned Brand Intelligence + the research pipeline that feeds it.
+// =============================================
+
+// Operator-entered research sources for a brand (one per URL/handle).
+export const brandSources = pgTable(
+  "brand_sources",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    brandId: uuid("brand_id").notNull().references(() => brands.id, { onDelete: "cascade" }),
+    // website | meta_ads | competitor | amazon | trustpilot | google_reviews | reddit | social | email | upload
+    type: text("type").notNull(),
+    url: text("url"),
+    handle: text("handle"),
+    config: jsonb("config").$type<Record<string, unknown>>().notNull().default({}), // {country, maxItems, scrapeJobIds?, competitorIds?, site?, platform?}
+    // idle | queued | running | complete | failed | partial
+    status: text("status").notNull().default("idle"),
+    enabled: boolean("enabled").notNull().default(true),
+    lastRunAt: timestamp("last_run_at", { withTimezone: true }),
+    lastError: text("last_error"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("brand_sources_brand_type_url_uidx").on(t.brandId, t.type, t.url),
+    index("brand_sources_brand_idx").on(t.brandId),
+  ]
+);
+
+// One worker row per research stage (P2+). Mirrors the competitor scrape_jobs FSM.
+export const researchJobs = pgTable(
+  "research_jobs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    brandId: uuid("brand_id").notNull().references(() => brands.id, { onDelete: "cascade" }),
+    sourceId: uuid("source_id").references(() => brandSources.id, { onDelete: "cascade" }),
+    module: text("module").notNull(), // website|reviews|compliance|meta_ads|competitor|assets
+    type: text("type").notNull().default("fetch"), // fetch | extract | delegated
+    status: text("status").notNull().default("pending"), // pending | running | complete | failed
+    provider: text("provider"), // apify | tavily | gemini | claude | internal
+    apifyRunId: text("apify_run_id"),
+    apifyDatasetId: text("apify_dataset_id"),
+    costCents: integer("cost_cents").notNull().default(0),
+    attempts: integer("attempts").notNull().default(0),
+    maxAttempts: integer("max_attempts").notNull().default(3),
+    error: text("error"),
+    meta: jsonb("meta").$type<Record<string, unknown>>().notNull().default({}),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("research_jobs_brand_status_idx").on(t.brandId, t.status),
+    index("research_jobs_source_idx").on(t.sourceId),
+  ]
+);
+
+// Large raw blobs live in Supabase storage; the row holds the key + metadata.
+export const rawArtifacts = pgTable(
+  "raw_artifacts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    brandId: uuid("brand_id").notNull().references(() => brands.id, { onDelete: "cascade" }),
+    jobId: uuid("job_id").references(() => researchJobs.id, { onDelete: "cascade" }),
+    kind: text("kind").notNull(), // page | ad | review | post | transcript | asset
+    storageKey: text("storage_key"),
+    externalId: text("external_id"), // dedup key (review id, post permalink hash, page-url hash)
+    meta: jsonb("meta").$type<Record<string, unknown>>().notNull().default({}),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("raw_artifacts_job_external_uidx").on(t.jobId, t.kind, t.externalId),
+    index("raw_artifacts_brand_idx").on(t.brandId),
+  ]
+);
+
+// Structured AI extraction per source (one current row per (source, schemaType); re-run upserts).
+export const extractions = pgTable(
+  "extractions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    brandId: uuid("brand_id").notNull().references(() => brands.id, { onDelete: "cascade" }),
+    sourceId: uuid("source_id").references(() => brandSources.id, { onDelete: "cascade" }),
+    jobId: uuid("job_id").references(() => researchJobs.id, { onDelete: "set null" }),
+    schemaType: text("schema_type").notNull(), // website_intel | voc | compliance | ...
+    json: jsonb("json").$type<Record<string, unknown>>().notNull().default({}),
+    confidence: numeric("confidence", { precision: 4, scale: 3 }),
+    model: text("model"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("extractions_source_schema_uidx").on(t.sourceId, t.schemaType),
+    index("extractions_brand_schema_idx").on(t.brandId, t.schemaType),
+  ]
+);
+
+// Brand assets (operator uploads + auto-pulled PDP images), stored in Supabase.
+export const brandAssets = pgTable(
+  "brand_assets",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    brandId: uuid("brand_id").notNull().references(() => brands.id, { onDelete: "cascade" }),
+    type: text("type").notNull(), // logo | font | palette | brand_book | product_photo | packaging | winning_creative
+    storageKey: text("storage_key").notNull(),
+    sourceId: uuid("source_id").references(() => brandSources.id, { onDelete: "set null" }),
+    meta: jsonb("meta").$type<Record<string, unknown>>().notNull().default({}), // {origin, productUrl, width, height, hex?, filename, contentType}
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("brand_assets_brand_key_uidx").on(t.brandId, t.storageKey),
+    index("brand_assets_brand_type_idx").on(t.brandId, t.type),
+  ]
+);
+
+// Brand-specific, jurisdiction-aware compliance ruleset (P3).
+export const complianceRules = pgTable(
+  "compliance_rules",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    brandId: uuid("brand_id").notNull().references(() => brands.id, { onDelete: "cascade" }),
+    subject: text("subject").notNull(), // ingredient or claim text
+    jurisdiction: text("jurisdiction").notNull(), // US_FTC_FDA | EU_EFSA_DSA
+    verdict: text("verdict").notNull(), // safe | risky | banned
+    rationale: text("rationale"),
+    evidenceSource: text("evidence_source"),
+    brandRunsThisClaim: boolean("brand_runs_this_claim").notNull().default(false),
+    confidence: numeric("confidence", { precision: 4, scale: 3 }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("compliance_brand_subject_juris_uidx").on(t.brandId, t.subject, t.jurisdiction),
+    index("compliance_brand_idx").on(t.brandId),
+  ]
+);
+
+// THE B3 — versioned Brand Intelligence object (the single grounding source).
+export const brandIntelligence = pgTable(
+  "brand_intelligence",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    brandId: uuid("brand_id").notNull().references(() => brands.id, { onDelete: "cascade" }),
+    version: integer("version").notNull(),
+    status: text("status").notNull().default("draft"), // draft | approved
+    json: jsonb("json").$type<Record<string, unknown>>().notNull().default({}), // the B3 object
+    confidenceJson: jsonb("confidence_json").$type<Record<string, number>>().notNull().default({}),
+    gapsJson: jsonb("gaps_json").$type<{ field: string; severity: string; reason: string }[]>().notNull().default([]),
+    sourceRefsJson: jsonb("source_refs_json").$type<Record<string, unknown>>().notNull().default({}),
+    approvedBy: uuid("approved_by").references(() => profiles.id, { onDelete: "set null" }),
+    approvedAt: timestamp("approved_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("brand_intel_brand_version_uidx").on(t.brandId, t.version),
+    index("brand_intel_brand_status_idx").on(t.brandId, t.status),
+  ]
+);

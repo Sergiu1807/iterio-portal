@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, Building2, BookOpen, Sparkles, ShieldCheck } from "lucide-react";
+import { LayoutDashboard, Building2, BookOpen, Sparkles, ShieldCheck, Compass } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { systemsByGroup } from "@/systems/registry";
 import { NAV_GROUP_LABELS } from "@/systems/types";
@@ -14,6 +14,7 @@ import { ThemeToggle } from "./theme-toggle";
 const BASE_NAV = [
   { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
   { name: "Brands", href: "/brands", icon: Building2 },
+  { name: "Onboarding", href: "/onboarding", icon: Compass },
   { name: "Brand Intelligence", href: "/brand-intelligence", icon: BookOpen },
 ];
 

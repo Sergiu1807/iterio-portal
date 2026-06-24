@@ -1,7 +1,8 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Plus, X, Star, ExternalLink, Image as ImageIcon, Maximize2 } from "lucide-react";
+import { Plus, X, Star, ExternalLink, Image as ImageIcon, Maximize2, Compass } from "lucide-react";
 import { useBrand } from "@/lib/brand-store";
 import { uid, cn } from "@/lib/utils";
 import type { Brand } from "@/lib/types";
@@ -39,6 +40,20 @@ export default function BrandIntelligencePage() {
         description="The single source of truth every system reads — voice, audience, products, guardrails."
         actions={<BrandMark name={brand.name} color={brand.brandColor} size={52} />}
       />
+
+      <BentoCard className="brand-wash flex flex-wrap items-center justify-between gap-3 p-4">
+        <div className="flex items-center gap-2.5">
+          <span className="flex size-8 items-center justify-center rounded-full bg-primary/12 text-primary">
+            <Compass className="size-4" />
+          </span>
+          <p className="text-sm text-muted-foreground">
+            Build an evidence-backed <span className="font-medium text-foreground">Brand Intelligence (B3)</span> foundation — these sections are its projection.
+          </p>
+        </div>
+        <Button asChild size="sm" variant="outline">
+          <Link href="/onboarding">Open foundation</Link>
+        </Button>
+      </BentoCard>
 
       <Tabs defaultValue="intel">
         <TabsList className="flex-wrap">
