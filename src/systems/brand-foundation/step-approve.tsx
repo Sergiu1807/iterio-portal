@@ -2,17 +2,19 @@
 
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { Loader2, Lock, Check, History } from "lucide-react";
+import { Loader2, Lock, Check, History, GitCompare } from "lucide-react";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { BentoCard } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import type { IntelRow } from "./ui-types";
+import { VersionDiff } from "./version-diff";
 
 export function StepApprove({ row, brandId, onApproved }: { row: IntelRow; brandId: string; onApproved: () => void }) {
   const [versions, setVersions] = useState<IntelRow[]>([]);
   const [confirm, setConfirm] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [comparing, setComparing] = useState(false);
   const gaps = row.gapsJson ?? [];
 
   useEffect(() => {
@@ -53,13 +55,24 @@ export function StepApprove({ row, brandId, onApproved }: { row: IntelRow; brand
 
       {versions.length > 0 && (
         <BentoCard className="space-y-2 p-5">
-          <h3 className="flex items-center gap-1.5 text-sm font-medium"><History className="size-4" /> Version history</h3>
-          {versions.map((v) => (
-            <div key={v.id} className="flex items-center justify-between text-sm">
-              <span className="text-muted-foreground">v{v.version}{v.approvedAt ? ` · approved ${new Date(v.approvedAt).toLocaleDateString()}` : ""}</span>
-              <Badge variant={v.status === "approved" ? "success" : "muted"}>{v.status}</Badge>
-            </div>
-          ))}
+          <div className="flex items-center justify-between">
+            <h3 className="flex items-center gap-1.5 text-sm font-medium"><History className="size-4" /> Version history</h3>
+            {versions.length > 1 && (
+              <Button size="sm" variant="ghost" onClick={() => setComparing((c) => !c)}>
+                <GitCompare className="size-3.5" /> {comparing ? "Hide diff" : "Compare"}
+              </Button>
+            )}
+          </div>
+          {comparing ? (
+            <VersionDiff versions={versions} />
+          ) : (
+            versions.map((v) => (
+              <div key={v.id} className="flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">v{v.version}{v.approvedAt ? ` · approved ${new Date(v.approvedAt).toLocaleDateString()}` : ""}</span>
+                <Badge variant={v.status === "approved" ? "success" : "muted"}>{v.status}</Badge>
+              </div>
+            ))
+          )}
         </BentoCard>
       )}
 
