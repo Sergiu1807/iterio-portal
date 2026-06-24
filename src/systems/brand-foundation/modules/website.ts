@@ -4,7 +4,7 @@ import { eq } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
 import { callClaude, toolResult } from "@/lib/providers/claude";
 import { tavilySearch } from "@/lib/providers/tavily";
-import { fetchWebsiteText } from "@/lib/storage";
+import { crawlBrandSite } from "@/lib/storage";
 
 const SYSTEM_KEY = "brand-onboarding";
 
@@ -55,7 +55,10 @@ export async function runWebsiteJob(job: JobRow, source: SourceRow): Promise<voi
   let host = url;
   try { host = new URL(url).hostname.replace(/^www\./, ""); } catch { /* keep url */ }
 
-  const homeText = (await fetchWebsiteText(url, { maxChars: 14000 })) ?? "";
+  // Crawl the homepage + a few product/about/FAQ pages so we capture ingredients,
+  // dosage, founder story etc. — not just the homepage.
+  const pages = await crawlBrandSite(url, { maxPages: 6, maxCharsPerPage: 5000 });
+  const homeText = pages.map((p) => `[${p.url}]\n${p.text}`).join("\n\n").slice(0, 18000);
   // Tavily is enrichment — degrade gracefully if its key is missing or it errors.
   let tav: { answer: string; results: { title: string; url: string; content: string }[] } = { answer: "", results: [] };
   try {
@@ -80,12 +83,12 @@ export async function runWebsiteJob(job: JobRow, source: SourceRow): Promise<voi
       jobId: job.id,
       kind: "page",
       externalId: url,
-      meta: { url, text: homeText.slice(0, 16000), tavilyAnswer: tav.answer, sources: tav.results.map((r) => ({ title: r.title, url: r.url })) },
+      meta: { url, pages: pages.map((p) => p.url), text: homeText.slice(0, 16000), tavilyAnswer: tav.answer, sources: tav.results.map((r) => ({ title: r.title, url: r.url })) },
     })
     .onConflictDoNothing();
 
   const context = [
-    homeText ? `HOMEPAGE TEXT:\n${homeText.slice(0, 12000)}` : "(homepage text unavailable)",
+    homeText ? `SITE PAGES (${pages.length}):\n${homeText.slice(0, 16000)}` : "(site text unavailable)",
     tav.answer ? `\nWEB RESEARCH SUMMARY:\n${tav.answer}` : "",
     `\nSOURCES:\n${tav.results.map((r) => `- ${r.title} (${r.url}): ${r.content}`).join("\n").slice(0, 4000)}`,
   ].join("\n");

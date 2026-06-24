@@ -238,3 +238,51 @@ export async function fetchWebsiteText(
   if (!text) return null;
   return text.slice(0, opts?.maxChars ?? 12_000);
 }
+
+/** Crawl a brand site: homepage + a few same-origin product/about/FAQ pages → text.
+ *  Discovers links from the homepage HTML (fetchWebsiteText strips them), filters to
+ *  the same origin + content-bearing paths, and returns each page's readable text. */
+const CRAWL_KEEP = /(about|story|mission|faq|ingredient|product|collection|shop|science|how-it-works|benefit|review)/i;
+const CRAWL_SKIP = /(cart|checkout|account|login|signin|wishlist|policy|privacy|terms|refund|shipping|returns|contact|gift|blog\/|\.(?:jpg|jpeg|png|gif|webp|svg|pdf|css|js|ico))/i;
+
+export async function crawlBrandSite(rootUrl: string, opts?: { maxPages?: number; maxCharsPerPage?: number }): Promise<{ url: string; text: string }[]> {
+  const maxPages = opts?.maxPages ?? 6;
+  const perPage = opts?.maxCharsPerPage ?? 5000;
+  let root: URL;
+  try { root = new URL(/^https?:\/\//i.test(rootUrl) ? rootUrl : `https://${rootUrl}`); } catch { return []; }
+  if (root.protocol !== "https:" || !(await assertPublicHost(root.hostname))) return [];
+  const host = root.hostname.replace(/^www\./, "");
+
+  let html = "";
+  try {
+    const res = await fetch(root.toString(), { signal: AbortSignal.timeout(15_000), redirect: "follow", headers: { "user-agent": "Mozilla/5.0 (compatible; IterioBot/1.0)" } });
+    if (res.ok) html = (await res.text()).slice(0, 600_000);
+  } catch {
+    /* homepage HTML unavailable — still try the root via fetchWebsiteText below */
+  }
+
+  const links = new Set<string>();
+  for (const m of html.matchAll(/href=["']([^"'#]+)["']/gi)) {
+    try {
+      const u = new URL(m[1], root);
+      if (u.hostname.replace(/^www\./, "") !== host) continue;
+      if (CRAWL_SKIP.test(u.pathname) || !CRAWL_KEEP.test(u.pathname)) continue;
+      u.hash = ""; u.search = "";
+      links.add(u.toString());
+    } catch {
+      /* skip bad href */
+    }
+  }
+
+  // Prioritise individual product/ingredient pages (where dosages/ingredients live)
+  // over listing/collection pages, then about/story/faq.
+  const score = (u: string) => (/\/products?\//i.test(u) || /ingredient/i.test(u) ? 0 : /(about|story|mission|faq|science|how-it-works|benefit)/i.test(u) ? 1 : 2);
+  const ranked = Array.from(links).sort((a, b) => score(a) - score(b));
+  const urls = [root.toString(), ...ranked.slice(0, maxPages - 1)];
+  const pages: { url: string; text: string }[] = [];
+  for (const u of urls) {
+    const t = await fetchWebsiteText(u, { maxChars: perPage, timeoutMs: 12_000 });
+    if (t) pages.push({ url: u, text: t });
+  }
+  return pages;
+}

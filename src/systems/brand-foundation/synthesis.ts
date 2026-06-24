@@ -97,5 +97,14 @@ export async function synthesizeB3(brandId: string): Promise<void> {
     generated_at: new Date().toISOString(),
   };
 
+  // Fold the structured compliance ruleset in deterministically (don't rely on the LLM to restate it).
+  const crs = await db.select().from(schema.complianceRules).where(eq(schema.complianceRules.brandId, brandId));
+  if (crs.length) {
+    b3.compliance = {
+      ...(b3.compliance ?? {}),
+      rules: crs.map((r) => ({ subject: r.subject, jurisdiction: r.jurisdiction, verdict: r.verdict, rationale: r.rationale ?? undefined })),
+    };
+  }
+
   await createDraft(brandId, b3);
 }
