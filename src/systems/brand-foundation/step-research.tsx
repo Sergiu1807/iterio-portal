@@ -1,20 +1,21 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Loader2, RefreshCw, Check, AlertTriangle, Globe, Megaphone, Building2, Star, FileSearch, Sparkles, ArrowRight } from "lucide-react";
+import { Loader2, RefreshCw, Check, AlertTriangle, Globe, Megaphone, Building2, Star, FileSearch, Sparkles, ArrowRight, ShieldCheck } from "lucide-react";
 import { BentoCard } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import type { BrandSource } from "./ui-types";
-import { SOURCE_TYPE_LABEL } from "./ui-utils";
+import { SOURCE_TYPE_LABEL, DEFERRED_SOURCE_TYPES } from "./ui-utils";
 
 type Job = { id: string; sourceId: string | null; module: string; status: string; costCents: number; error: string | null };
 
 const ICON: Record<string, React.ReactNode> = {
   website: <Globe className="size-4" />, meta_ads: <Megaphone className="size-4" />, competitor: <Building2 className="size-4" />,
   amazon: <Star className="size-4" />, trustpilot: <Star className="size-4" />, google_reviews: <Star className="size-4" />,
+  compliance: <ShieldCheck className="size-4" />,
 };
 const STATUS: Record<string, { label: string; variant: "muted" | "warning" | "success" | "outline"; spin?: boolean }> = {
   idle: { label: "Idle", variant: "muted" }, queued: { label: "Queued", variant: "muted" },
@@ -30,8 +31,8 @@ export function StepResearch({
 }) {
   const [viewer, setViewer] = useState<BrandSource | null>(null);
   const jobBySource = new Map(jobs.filter((j) => j.sourceId).map((j) => [j.sourceId as string, j]));
-  const live = sources.filter((s) => ["website", "meta_ads", "competitor"].includes(s.type));
-  const settled = live.every((s) => ["complete", "failed", "partial"].includes(s.status));
+  const live = sources.filter((s) => !DEFERRED_SOURCE_TYPES.includes(s.type));
+  const settled = live.length > 0 && live.every((s) => ["complete", "failed", "partial"].includes(s.status));
   const anyComplete = live.some((s) => s.status === "complete");
   const totalCost = jobs.reduce((a, j) => a + (j.costCents ?? 0), 0);
 
@@ -61,7 +62,7 @@ export function StepResearch({
                 <span>{job?.costCents ? `$${(job.costCents / 100).toFixed(3)}` : "—"}</span>
                 <div className="flex gap-1">
                   {s.status === "complete" && <Button size="sm" variant="ghost" onClick={() => setViewer(s)}>View</Button>}
-                  {["website", "meta_ads", "competitor"].includes(s.type) && (
+                  {!DEFERRED_SOURCE_TYPES.includes(s.type) && (
                     <Button size="sm" variant="ghost" onClick={() => onRerun(s.id)} aria-label="Re-run"><RefreshCw className="size-3.5" /></Button>
                   )}
                 </div>

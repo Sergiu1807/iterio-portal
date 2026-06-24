@@ -1,102 +1,97 @@
 import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
-import { and, asc, eq, inArray, lt, sql } from "drizzle-orm";
+import { and, eq, inArray, lt, sql } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
 import { startScrapeJob } from "@/systems/competitor-research/scrape-job";
 import { isAdLibraryUrl } from "@/systems/competitor-research/meta-url";
 import { runWebsiteJob } from "./modules/website";
-import { synthesizeB3 } from "./synthesis";
+import { runReviewsJob } from "./modules/reviews";
+import { runComplianceJob, WaitError } from "./modules/compliance";
 
 const MAX_ATTEMPTS = 3;
 const TERMINAL_SOURCE = ["complete", "failed", "partial"];
-// Source types with a live P2 module; others are deferred (P3) and marked "partial".
-const P2_TYPES = ["website", "meta_ads", "competitor"];
+const REVIEW_TYPES = ["amazon", "trustpilot", "google_reviews"];
+const DELEGATED_TYPES = ["meta_ads", "competitor"];
+// User-input source types with a live module; others (social/reddit/email/upload) are deferred → "partial".
+const LIVE_INPUT_TYPES = ["website", ...DELEGATED_TYPES, ...REVIEW_TYPES];
 
 type SourceRow = typeof schema.brandSources.$inferSelect;
 type JobRow = typeof schema.researchJobs.$inferSelect;
 
 function isTransient(e: unknown): boolean {
   if (e instanceof Anthropic.APIError) { const s = e.status ?? 0; return s === 429 || s >= 500; }
-  return /connection error|fetch failed|econnreset|etimedout|socket|network|timed out/i.test(String((e as { message?: string })?.message ?? e));
+  return /connection error|fetch failed|econnreset|etimedout|socket|network|timed out|gemini \d/i.test(String((e as { message?: string })?.message ?? e));
 }
 
 const setSource = (id: string, patch: Partial<SourceRow>) => db.update(schema.brandSources).set({ ...patch, updatedAt: new Date() }).where(eq(schema.brandSources.id, id));
 const setJob = (id: string, patch: Partial<JobRow>) => db.update(schema.researchJobs).set({ ...patch, updatedAt: new Date() }).where(eq(schema.researchJobs.id, id));
 
-/** Create jobs for every enabled source + fan out the delegated (meta/competitor) scrapes. */
-export async function startOnboarding(brandId: string): Promise<void> {
-  const sources = await db.select().from(schema.brandSources).where(and(eq(schema.brandSources.brandId, brandId), eq(schema.brandSources.enabled, true)));
+const RUNNERS: Record<string, (job: JobRow, source: SourceRow) => Promise<void>> = {
+  website: runWebsiteJob,
+  reviews: runReviewsJob,
+  compliance: runComplianceJob,
+};
 
-  for (const s of sources) {
-    if (!P2_TYPES.includes(s.type)) {
-      await setSource(s.id, { status: "partial", lastError: "Module arrives in a later build" });
-      continue;
-    }
-    // clear any prior jobs for this source (re-run safe)
-    await db.delete(schema.researchJobs).where(eq(schema.researchJobs.sourceId, s.id));
+/** Delegate a meta/competitor source to the existing competitor pipeline. */
+async function delegateScrape(brandId: string, s: SourceRow): Promise<void> {
+  let scrapeJobId: string;
+  if (s.type === "competitor") {
+    const name = String(s.config?.name ?? s.handle ?? "Competitor");
+    const metaLib = String(s.config?.metaLibraryUrl ?? "");
+    const [comp] = await db
+      .insert(schema.competitors)
+      .values({ brandId, name, websiteUrl: s.url ?? null, metaLibraryUrl: metaLib || null, type: "Direct", country: "ALL" })
+      .returning({ id: schema.competitors.id });
+    const useUrl = metaLib && isAdLibraryUrl(metaLib);
+    ({ jobId: scrapeJobId } = await startScrapeJob(useUrl ? { brandId, mode: "url", query: metaLib, competitorId: comp.id } : { brandId, mode: "keyword", query: name, competitorId: comp.id }));
+  } else {
+    const url = s.url ?? "";
+    ({ jobId: scrapeJobId } = await startScrapeJob(isAdLibraryUrl(url) ? { brandId, mode: "url", query: url } : { brandId, mode: "keyword", query: url }));
+  }
+  await setSource(s.id, { status: "running", lastRunAt: new Date(), lastError: null, config: { ...s.config, scrapeJobId } });
+  await db.insert(schema.researchJobs).values({ brandId, sourceId: s.id, module: s.type, type: "delegated", status: "running", provider: "apify", meta: { scrapeJobId } });
+}
 
-    if (s.type === "website") {
-      await setSource(s.id, { status: "running", lastRunAt: new Date(), lastError: null });
-      await db.insert(schema.researchJobs).values({ brandId, sourceId: s.id, module: "website", type: "extract", status: "pending", provider: "claude" });
-      continue;
-    }
+/** Create (once) the auto compliance source + its pending job. Depends on the website extraction. */
+async function ensureComplianceJob(brandId: string): Promise<void> {
+  let [src] = await db.select().from(schema.brandSources).where(and(eq(schema.brandSources.brandId, brandId), eq(schema.brandSources.type, "compliance"))).limit(1);
+  if (!src) {
+    [src] = await db.insert(schema.brandSources).values({ brandId, type: "compliance", status: "running", config: { auto: true } }).returning();
+  } else {
+    await setSource(src.id, { status: "running", lastError: null });
+  }
+  await db.delete(schema.researchJobs).where(eq(schema.researchJobs.sourceId, src.id));
+  await db.insert(schema.researchJobs).values({ brandId, sourceId: src.id, module: "compliance", type: "extract", status: "pending", provider: "gemini" });
+}
 
-    // meta_ads / competitor → delegate to the existing competitor pipeline
-    try {
-      let scrapeJobId: string;
-      if (s.type === "competitor") {
-        const name = String(s.config?.name ?? s.handle ?? "Competitor");
-        const metaLib = String(s.config?.metaLibraryUrl ?? "");
-        const [comp] = await db
-          .insert(schema.competitors)
-          .values({ brandId, name, websiteUrl: s.url ?? null, metaLibraryUrl: metaLib || null, type: "Direct", country: "ALL" })
-          .returning({ id: schema.competitors.id });
-        const useUrl = metaLib && isAdLibraryUrl(metaLib);
-        ({ jobId: scrapeJobId } = await startScrapeJob(useUrl ? { brandId, mode: "url", query: metaLib, competitorId: comp.id } : { brandId, mode: "keyword", query: name, competitorId: comp.id }));
-      } else {
-        // brand's own Meta ads
-        const url = s.url ?? "";
-        ({ jobId: scrapeJobId } = await startScrapeJob(isAdLibraryUrl(url) ? { brandId, mode: "url", query: url } : { brandId, mode: "keyword", query: url }));
-      }
-      await setSource(s.id, { status: "running", lastRunAt: new Date(), lastError: null, config: { ...s.config, scrapeJobId } });
-      await db.insert(schema.researchJobs).values({ brandId, sourceId: s.id, module: s.type, type: "delegated", status: "running", provider: "apify", meta: { scrapeJobId } });
-    } catch (e) {
-      await setSource(s.id, { status: "failed", lastError: String((e as Error)?.message ?? e).slice(0, 300) });
-    }
+async function dispatchSource(brandId: string, s: SourceRow): Promise<void> {
+  if (!LIVE_INPUT_TYPES.includes(s.type)) { await setSource(s.id, { status: "partial", lastError: "Module arrives in a later build" }); return; }
+  await db.delete(schema.researchJobs).where(eq(schema.researchJobs.sourceId, s.id));
+  if (s.type === "website") {
+    await setSource(s.id, { status: "running", lastRunAt: new Date(), lastError: null });
+    await db.insert(schema.researchJobs).values({ brandId, sourceId: s.id, module: "website", type: "extract", status: "pending", provider: "claude" });
+  } else if (REVIEW_TYPES.includes(s.type)) {
+    await setSource(s.id, { status: "running", lastRunAt: new Date(), lastError: null });
+    await db.insert(schema.researchJobs).values({ brandId, sourceId: s.id, module: "reviews", type: "extract", status: "pending", provider: "tavily" });
+  } else {
+    try { await delegateScrape(brandId, s); } catch (e) { await setSource(s.id, { status: "failed", lastError: String((e as Error)?.message ?? e).slice(0, 300) }); }
   }
 }
 
-/** Re-run a single source (reset + re-fan-out). */
+/** Create jobs for every enabled source + fan out the delegated scrapes + auto compliance. */
+export async function startOnboarding(brandId: string): Promise<void> {
+  const sources = await db.select().from(schema.brandSources).where(and(eq(schema.brandSources.brandId, brandId), eq(schema.brandSources.enabled, true)));
+  const inputSources = sources.filter((s) => s.type !== "compliance");
+  for (const s of inputSources) await dispatchSource(brandId, s);
+  if (inputSources.some((s) => s.type === "website")) await ensureComplianceJob(brandId);
+}
+
+/** Re-run a single source. */
 export async function rerunSource(brandId: string, sourceId: string): Promise<void> {
-  await setSource(sourceId, { status: "queued", lastError: null });
-  // startOnboarding re-creates jobs for all enabled sources, but only re-fires the ones needing it;
-  // to keep it scoped, just re-run this source by re-dispatching the whole set (idempotent for others
-  // that are already complete? no) — so handle this one inline:
   const [s] = await db.select().from(schema.brandSources).where(eq(schema.brandSources.id, sourceId)).limit(1);
   if (!s) return;
-  if (!P2_TYPES.includes(s.type)) { await setSource(s.id, { status: "partial" }); return; }
-  await db.delete(schema.researchJobs).where(eq(schema.researchJobs.sourceId, s.id));
-  if (s.type === "website") {
-    await setSource(s.id, { status: "running", lastRunAt: new Date() });
-    await db.insert(schema.researchJobs).values({ brandId, sourceId: s.id, module: "website", type: "extract", status: "pending", provider: "claude" });
-  } else {
-    try {
-      const name = String(s.config?.name ?? s.handle ?? "Competitor");
-      const metaLib = String(s.config?.metaLibraryUrl ?? "");
-      let scrapeJobId: string;
-      if (s.type === "competitor") {
-        const useUrl = metaLib && isAdLibraryUrl(metaLib);
-        ({ jobId: scrapeJobId } = await startScrapeJob(useUrl ? { brandId, mode: "url", query: metaLib } : { brandId, mode: "keyword", query: name }));
-      } else {
-        const url = s.url ?? "";
-        ({ jobId: scrapeJobId } = await startScrapeJob(isAdLibraryUrl(url) ? { brandId, mode: "url", query: url } : { brandId, mode: "keyword", query: url }));
-      }
-      await setSource(s.id, { status: "running", lastRunAt: new Date(), config: { ...s.config, scrapeJobId } });
-      await db.insert(schema.researchJobs).values({ brandId, sourceId: s.id, module: s.type, type: "delegated", status: "running", provider: "apify", meta: { scrapeJobId } });
-    } catch (e) {
-      await setSource(s.id, { status: "failed", lastError: String((e as Error)?.message ?? e).slice(0, 300) });
-    }
-  }
+  if (s.type === "compliance") { await ensureComplianceJob(brandId); return; }
+  await dispatchSource(brandId, s);
 }
 
 /** Advance delegated (meta/competitor) jobs by checking the linked scrape_job. */
@@ -112,18 +107,17 @@ async function advanceDelegated(brandId?: string): Promise<void> {
     if (!sj) continue;
     if (sj.status === "complete") { await setJob(j.id, { status: "complete" }); if (j.sourceId) await setSource(j.sourceId, { status: "complete" }); }
     else if (sj.status === "error") { await setJob(j.id, { status: "failed", error: sj.error ?? "scrape failed" }); if (j.sourceId) await setSource(j.sourceId, { status: "failed", lastError: sj.error ?? "scrape failed" }); }
-    // else still running — leave
   }
 }
 
-/** Atomic-claim + run website extraction jobs (FOR UPDATE SKIP LOCKED). */
-async function claimAndRunWebsite(brandId?: string, limit = 3): Promise<number> {
+/** Atomic-claim + run internal extract jobs (website / reviews / compliance). */
+async function claimAndRunExtract(brandId?: string, limit = 3): Promise<number> {
   const brandFilter = brandId ? sql`AND brand_id = ${brandId}` : sql``;
   const claimed = await db.execute(sql`
     UPDATE research_jobs SET status = 'running', attempts = attempts + 1, updated_at = now()
     WHERE id IN (
       SELECT id FROM research_jobs
-      WHERE module = 'website' AND type = 'extract' AND status = 'pending' AND attempts < ${MAX_ATTEMPTS} ${brandFilter}
+      WHERE module IN ('website','reviews','compliance') AND type = 'extract' AND status = 'pending' AND attempts < ${MAX_ATTEMPTS} ${brandFilter}
       ORDER BY created_at ASC LIMIT ${limit} FOR UPDATE SKIP LOCKED
     ) RETURNING id`);
   const ids = (claimed as unknown as { id: string }[]).map((r) => r.id);
@@ -132,13 +126,16 @@ async function claimAndRunWebsite(brandId?: string, limit = 3): Promise<number> 
   const jobs = await db.select().from(schema.researchJobs).where(inArray(schema.researchJobs.id, ids));
   for (const j of jobs) {
     const [source] = j.sourceId ? await db.select().from(schema.brandSources).where(eq(schema.brandSources.id, j.sourceId)).limit(1) : [];
-    if (!source) { await setJob(j.id, { status: "failed", error: "source missing" }); continue; }
+    const runner = RUNNERS[j.module];
+    if (!source || !runner) { await setJob(j.id, { status: "failed", error: "source/module missing" }); continue; }
     try {
-      await runWebsiteJob(j, source);
+      await runner(j, source);
       await setJob(j.id, { status: "complete" });
       await setSource(source.id, { status: "complete", lastError: null });
     } catch (e) {
-      if (isTransient(e)) {
+      if (e instanceof WaitError) {
+        await setJob(j.id, { status: "pending", attempts: Math.max(0, j.attempts - 1) }); // dependency not ready — retry, no burn
+      } else if (isTransient(e)) {
         await setJob(j.id, { status: "pending", attempts: Math.max(0, j.attempts - 1), error: String(e).slice(0, 300) });
       } else {
         const exhausted = j.attempts >= MAX_ATTEMPTS;
@@ -161,21 +158,21 @@ export async function maybeSynthesize(brandId: string): Promise<void> {
   const gen = (() => { const g = (latest?.json as { meta?: { generated_at?: string } } | undefined)?.meta?.generated_at; return g ? +new Date(g) : 0; })();
   if (latest && gen >= maxSourceUpdate) return; // already synthesized for the current source state
 
+  const { synthesizeB3 } = await import("./synthesis");
   await synthesizeB3(brandId);
 }
 
 /** UI-driven advance for one brand (mirrors the competitor tick). */
 export async function runOnboardingTick(brandId: string): Promise<void> {
   await advanceDelegated(brandId);
-  await claimAndRunWebsite(brandId, 2);
+  await claimAndRunExtract(brandId, 2);
   await maybeSynthesize(brandId);
 }
 
 /** Cron backstops. */
 export async function pollDelegatedAll(): Promise<void> { await advanceDelegated(); }
 export async function extractAll(): Promise<void> {
-  await claimAndRunWebsite(undefined, 4);
-  // synthesize for any brand whose sources have all settled
+  await claimAndRunExtract(undefined, 4);
   const brands = await db.selectDistinct({ brandId: schema.brandSources.brandId }).from(schema.brandSources);
   for (const b of brands) await maybeSynthesize(b.brandId);
 }

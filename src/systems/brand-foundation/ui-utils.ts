@@ -23,4 +23,8 @@ export const SOURCE_TYPE_LABEL: Record<string, string> = {
   amazon: "Amazon reviews",
   trustpilot: "Trustpilot",
   google_reviews: "Google reviews",
+  compliance: "Compliance (FTC/FDA + EU)",
 };
+
+/** Source types deferred to a later build (no live module yet). */
+export const DEFERRED_SOURCE_TYPES = ["social", "reddit", "email", "upload"];
