@@ -2,6 +2,7 @@ import type { NavGroup, SystemDefinition } from "./types";
 import { brandFoundation } from "./brand-foundation";
 import { ideation } from "./ideation";
 import { briefGeneration } from "./brief-generation";
+import { adCopy } from "./ad-copy";
 import { staticGeneration } from "./static-generation";
 import { videoGeneration } from "./video-generation";
 import { competitorResearch } from "./competitor-research";
@@ -16,6 +17,7 @@ export const SYSTEMS: SystemDefinition[] = [
   brandFoundation,
   ideation,
   briefGeneration,
+  adCopy,
   staticGeneration,
   videoGeneration,
   competitorResearch,

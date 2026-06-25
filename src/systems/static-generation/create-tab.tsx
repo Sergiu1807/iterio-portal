@@ -70,10 +70,20 @@ export function CreateTab({
       const raw = sessionStorage.getItem("iterio:remake-prefill");
       if (!raw) return;
       const p = JSON.parse(raw) as {
-        target?: string; brandId?: string; referencePath?: string; referenceUrl?: string | null; adCopy?: string;
+        target?: string; mode?: string; brandId?: string; referencePath?: string; referenceUrl?: string | null; adCopy?: string; briefText?: string;
         productId?: string | null; aspectRatios?: string[]; variationCount?: number; resolution?: string;
         compliance?: { pass?: boolean; failures?: string[] };
       };
+      // Brief → production handoff (Brief Generator sends an assembled brief into Brief mode).
+      if (p.target === "static" && p.mode === "brief" && p.brandId === brandId && p.briefText) {
+        sessionStorage.removeItem("iterio:remake-prefill");
+        setMode("brief");
+        setBrief(p.briefText);
+        setProductId(p.productId ?? null);
+        if (p.compliance?.pass === false && p.compliance.failures?.length) setRemakeNote(p.compliance.failures);
+        toast.success("Pre-filled from a brief", { description: "Review the brief, then Generate." });
+        return;
+      }
       if (p.target !== "static" || p.brandId !== brandId || !p.referencePath) return;
       sessionStorage.removeItem("iterio:remake-prefill");
       setMode("reference");

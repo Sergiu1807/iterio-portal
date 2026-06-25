@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Loader2, Star, Check, Send, Copy, RefreshCw, Pencil, Trash2, ShieldAlert, ShieldCheck, ShieldX, X } from "lucide-react";
 import { BentoCard } from "@/components/ui/card";
@@ -8,6 +9,7 @@ import { Badge, type BadgeProps } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input, Textarea } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import { BRIEF_PREFILL_KEY } from "@/systems/brief-generation/bridge";
 import type { IdeationAngle } from "./ui-types";
 
 const COMPLIANCE: Record<string, { variant: NonNullable<BadgeProps["variant"]>; icon: React.ReactNode; label: string }> = {
@@ -18,6 +20,7 @@ const COMPLIANCE: Record<string, { variant: NonNullable<BadgeProps["variant"]>; 
 const STATUS: Record<string, NonNullable<BadgeProps["variant"]>> = { draft: "muted", shortlisted: "warning", approved: "success", sent_to_brief: "outline" };
 
 export function AngleCard({ brandId, angle, onChange }: { brandId: string; angle: IdeationAngle; onChange: () => void }) {
+  const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState({ title: angle.title, hook: angle.hook ?? "", bigIdea: angle.bigIdea ?? "" });
@@ -47,6 +50,12 @@ export function AngleCard({ brandId, angle, onChange }: { brandId: string; angle
     navigator.clipboard.writeText(text).then(() => toast.success("Copied")).catch(() => {});
   };
   const saveEdit = async () => { await patch({ title: draft.title, hook: draft.hook, bigIdea: draft.bigIdea }, "Saved"); setEditing(false); };
+  // Hand off to the Brief Generator: preload this angle, then navigate (the brief
+  // backfills angle.brief_id + flips status to sent_to_brief once it completes).
+  const sendToBrief = () => {
+    sessionStorage.setItem(BRIEF_PREFILL_KEY, JSON.stringify({ target: "brief", brandId, angleId: angle.id, title: angle.title, format: angle.format }));
+    router.push("/s/brief-generation");
+  };
 
   return (
     <BentoCard className={cn("flex flex-col gap-2.5 p-4", angle.complianceFlag === "banned" && "border-destructive/40")}>
@@ -96,7 +105,7 @@ export function AngleCard({ brandId, angle, onChange }: { brandId: string; angle
         <div className="mt-auto flex flex-wrap items-center gap-1 pt-1">
           <Button size="sm" variant="ghost" onClick={() => patch({ status: "shortlisted" }, "Shortlisted")} disabled={busy} title="Shortlist"><Star className="size-3.5" /></Button>
           <Button size="sm" variant="ghost" onClick={() => patch({ status: "approved" }, "Approved")} disabled={busy} title="Approve"><Check className="size-3.5" /></Button>
-          <Button size="sm" variant="ghost" onClick={() => patch({ status: "sent_to_brief" }, "Sent to brief")} disabled={busy || angle.complianceFlag === "banned"} title="Send to brief"><Send className="size-3.5" /></Button>
+          <Button size="sm" variant="ghost" onClick={sendToBrief} disabled={busy || angle.complianceFlag === "banned"} title="Send to brief"><Send className="size-3.5" /></Button>
           <span className="mx-0.5 h-4 w-px bg-border" />
           <Button size="sm" variant="ghost" onClick={() => setEditing(true)} disabled={busy} title="Edit"><Pencil className="size-3.5" /></Button>
           <Button size="sm" variant="ghost" onClick={regenerate} disabled={busy} title="Regenerate similar"><RefreshCw className="size-3.5" /></Button>

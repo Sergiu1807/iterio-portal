@@ -808,3 +808,95 @@ export const angles = pgTable(
     index("angles_batch_idx").on(t.batchId),
   ]
 );
+
+// =============================================
+// BRIEF GENERATOR (SOP Stage 2 / A3) — an approved angle → a production-ready brief.
+// A `briefs` row IS its own queue item (one brief per angle), claimed + finalized directly.
+// =============================================
+export const briefs = pgTable(
+  "briefs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    brandId: uuid("brand_id").notNull().references(() => brands.id, { onDelete: "cascade" }),
+    angleId: uuid("angle_id").references(() => angles.id, { onDelete: "set null" }),
+    productId: uuid("product_id").references(() => products.id, { onDelete: "set null" }),
+    format: text("format").notNull().default("static"), // static | carousel | video
+    funnelStage: text("funnel_stage"),
+    status: text("status").notNull().default("pending"), // pending | running | complete | failed | approved
+    groundingSource: text("grounding_source"), // b3 | flat | none
+    b3Version: integer("b3_version"),
+    briefJson: jsonb("brief_json").$type<Record<string, unknown>>(), // video {hook_frame,script,scene_list,...} | static {frames,format_intent}
+    referenceRef: jsonb("reference_ref").$type<{ kind: string; id: string; storageKey?: string | null } | null>(), // recreate-this-winner
+    complianceNotesJson: jsonb("compliance_notes_json").$type<{ flag: string; ruleRef?: string | null; notes: string[] }>().notNull().default({ flag: "safe", notes: [] }),
+    depth: text("depth").notNull().default("standard"), // concise | standard | detailed
+    notes: text("notes"),
+    attempts: integer("attempts").notNull().default(0),
+    maxAttempts: integer("max_attempts").notNull().default(3),
+    errorMessage: text("error_message"),
+    costCents: integer("cost_cents").notNull().default(0),
+    sentToProduction: text("sent_to_production"), // null | "static" | "video" (linkage marker)
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+  },
+  (t) => [
+    index("briefs_brand_status_idx").on(t.brandId, t.status),
+    index("briefs_angle_idx").on(t.angleId),
+    index("briefs_status_idx").on(t.status),
+  ]
+);
+
+// =============================================
+// AD COPY GENERATOR (SOP Stage 2 / A5) — angle/brief → N launch-ready copy variants.
+// Batch = queue item (fans out to N variants), mirroring the Ideation batch→items shape.
+// =============================================
+export const adCopyBatches = pgTable(
+  "ad_copy_batches",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    brandId: uuid("brand_id").notNull().references(() => brands.id, { onDelete: "cascade" }),
+    angleId: uuid("angle_id").references(() => angles.id, { onDelete: "set null" }),
+    briefId: uuid("brief_id").references(() => briefs.id, { onDelete: "set null" }),
+    placement: text("placement").notNull().default("feed"), // feed | reels | story
+    variantCount: integer("variant_count").notNull().default(3),
+    funnelStage: text("funnel_stage"),
+    status: text("status").notNull().default("pending"), // pending | running | complete | failed
+    groundingSource: text("grounding_source"),
+    b3Version: integer("b3_version"),
+    attempts: integer("attempts").notNull().default(0),
+    maxAttempts: integer("max_attempts").notNull().default(3),
+    errorMessage: text("error_message"),
+    costCents: integer("cost_cents").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+  },
+  (t) => [
+    index("ad_copy_batches_brand_status_idx").on(t.brandId, t.status),
+    index("ad_copy_batches_status_idx").on(t.status),
+  ]
+);
+
+export const adCopy = pgTable(
+  "ad_copy",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    batchId: uuid("batch_id").notNull().references(() => adCopyBatches.id, { onDelete: "cascade" }),
+    brandId: uuid("brand_id").notNull().references(() => brands.id, { onDelete: "cascade" }),
+    angleId: uuid("angle_id").references(() => angles.id, { onDelete: "set null" }),
+    briefId: uuid("brief_id").references(() => briefs.id, { onDelete: "set null" }),
+    placement: text("placement"),
+    primaryText: text("primary_text"),
+    headline: text("headline"),
+    cta: text("cta"),
+    variantIndex: integer("variant_index").notNull().default(1),
+    complianceFlag: text("compliance_flag").notNull().default("safe"), // safe | risky | banned
+    ruleRef: text("rule_ref"),
+    status: text("status").notNull().default("draft"), // draft | approved
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("ad_copy_brand_status_idx").on(t.brandId, t.status),
+    index("ad_copy_batch_idx").on(t.batchId),
+  ]
+);

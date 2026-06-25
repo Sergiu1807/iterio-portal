@@ -1,3 +1,4 @@
+import { lazy } from "react";
 import { FileText } from "lucide-react";
 import type { SystemDefinition } from "../types";
 
@@ -5,19 +6,20 @@ export const briefGeneration: SystemDefinition = {
   key: "brief-generation",
   name: "Brief Generation",
   icon: FileText,
-  tagline: "Turn brand intelligence into production-ready creative briefs.",
+  tagline: "Turn an approved angle into a production-ready brief.",
   description:
-    "Generate structured creative briefs — hooks, angles, shot lists and guardrails — grounded in this brand's intelligence, products and personas. Each brief is built to hand straight to a creator or editor.",
+    "Expand an approved angle into a complete, production-ready brief — full video script + scene-by-scene shot list, or per-frame static/carousel visual spec — grounded in this brand's B3, with compliance carried through to production.",
   capabilities: [
-    "Hook + angle variations per psychology lever",
-    "Shot lists and camera direction",
-    "Compliance + brand-voice guardrails baked in",
-    "One-click handoff to production",
+    "Video script + scene-by-scene shot list",
+    "Per-frame static / carousel visual spec",
+    "Recreate a competitor winner on-brand",
+    "Compliance carried through · one-click to copy + production",
   ],
-  status: "placeholder",
+  status: "live",
   nav: { group: "create", order: 15 },
   infra: [{ kind: "apiKey", keyName: "ANTHROPIC_API_KEY", label: "Anthropic Claude" }],
   perBrand: true,
-  enabledByDefault: true,
+  enabledByDefault: false,
   accent: "#5A7A64",
+  Component: lazy(() => import("./component")),
 };
