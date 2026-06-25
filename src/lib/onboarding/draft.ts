@@ -27,48 +27,6 @@ export const SECTION_BLUEPRINT: { sectionType: SectionType; title: string }[] = 
   { sectionType: "constraints", title: "Creative Constraints & Guardrails" },
 ];
 
-/** Mock "AI research" — produces a believable, editable draft from a name + site. */
-export function synthesizeFromResearch(input: {
-  name: string;
-  website?: string;
-  category?: string;
-}): BrandDraft {
-  const { name, website, category } = input;
-  const pal = pickPalette(name);
-  const cat = category || "consumer brand";
-
-  const content: Record<SectionType, string> = {
-    identity: `${name} is a ${cat} with a clear point of view. *(Draft synthesized from research — refine to match the real positioning.)* The mission centers on solving a specific customer problem better than the incumbents, with a distinctive voice and a memorable experience.`,
-    audience: `The primary audience for ${name} skews intentional and value-driven — people who research before they buy and reward brands that feel honest. Secondary audiences expand from there. *(Edit with the real personas.)*`,
-    products: `${name}'s core offering and any hero products go here. Add SKUs, price points and the flagship the brand leads with. *(Populate from the catalog.)*`,
-    usps: `What makes ${name} genuinely different: the proof points, guarantees and unfair advantages competitors can't easily copy. *(Confirm the real USPs.)*`,
-    voice: `${name} speaks in a tone that matches its audience — confident but not hype-y, warm but precise. Avoid clichés and exclamation-mark energy. *(Tune to brand guidelines.)*`,
-    visual: `Visual direction draws on the brand's palette and a consistent photographic style. Keep it cohesive across formats. *(Adjust to the real art direction.)*`,
-    competitors: `${name} competes with several established players; the wedge is a sharper position and a better experience for the core customer. *(List the actual competitors.)*`,
-    constraints: `Respect category regulations and platform policies. No unverifiable claims. Keep messaging on-brand and compliant. *(Add brand-specific guardrails.)*`,
-  };
-
-  return {
-    name,
-    website,
-    category,
-    vibe: "Synthesized — refine",
-    brandColor: pal.brandColor,
-    palette: pal.palette,
-    onboardingSource: "research",
-    sections: SECTION_BLUEPRINT.map((b, i) => ({
-      sectionType: b.sectionType,
-      title: b.title,
-      content: content[b.sectionType],
-      sortOrder: i,
-    })),
-    products: [],
-    personas: [],
-    usps: [],
-    competitors: [],
-  };
-}
-
 const TYPE_RULES: [RegExp, SectionType][] = [
   [/identity|mission|about|overview|company|story/i, "identity"],
   [/audience|customer|persona|who we|target/i, "audience"],

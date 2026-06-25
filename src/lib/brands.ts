@@ -44,7 +44,13 @@ function mapBrand(
     personas: subs.personas.map((p) => ({ id: p.id, name: p.name, demographics: p.demographics ?? undefined, psychographics: p.psychographics ?? undefined, painPoints: p.painPoints ?? undefined, desires: p.desires ?? undefined })),
     usps: subs.usps.map((u) => ({ id: u.id, text: u.text, category: u.category ?? undefined, isPrimary: u.isPrimary })),
     competitors: subs.competitors.map((c) => ({ id: c.id, name: c.name, websiteUrl: c.websiteUrl ?? undefined, instagramHandle: c.instagramHandle ?? undefined, tiktokHandle: c.tiktokHandle ?? undefined, type: c.type ?? undefined })),
-    creativeDna: [],
+    // Derived from the brand's real palette + fonts (written by B3 approval / onboarding).
+    // No separate table — these columns ARE the brand's creative DNA.
+    creativeDna: [
+      ...(row.palette ?? []).map((p, i) => ({ id: `palette-${i}`, attributeName: p.role ? `color · ${p.role}` : "color", value: p.hex })),
+      ...(row.fonts?.display ? [{ id: "font-display", attributeName: "font · display", value: row.fonts.display }] : []),
+      ...(row.fonts?.body ? [{ id: "font-body", attributeName: "font · body", value: row.fonts.body }] : []),
+    ],
   };
 }
 

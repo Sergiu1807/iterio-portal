@@ -15,7 +15,7 @@ export const briefGeneration: SystemDefinition = {
     "One-click handoff to production",
   ],
   status: "placeholder",
-  nav: { group: "create", order: 10 },
+  nav: { group: "create", order: 15 },
   infra: [{ kind: "apiKey", keyName: "ANTHROPIC_API_KEY", label: "Anthropic Claude" }],
   perBrand: true,
   enabledByDefault: true,

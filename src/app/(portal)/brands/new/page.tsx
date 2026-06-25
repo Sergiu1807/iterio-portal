@@ -33,19 +33,21 @@ export default function NewBrandPage() {
     setStage("review");
   };
 
+  // Research path: create a CLEAN brand and go straight into the real Brand Foundation
+  // engine to build its B3 — no review of fabricated data (there is none).
+  const createResearch = async (d: BrandDraft) => {
+    try {
+      const brand = await addBrand({ ...d, sections: [], products: [], personas: [], usps: [], competitors: [] });
+      toast.success(`${brand.name} created`, { description: "Let's build its Brand Intelligence." });
+      router.push("/s/brand-foundation");
+    } catch {
+      toast.error("Couldn't create brand — try again.");
+    }
+  };
+
   const create = async () => {
     if (!draft) return;
     try {
-      // The "research" path leads into the foundation workspace to build the B3 —
-      // create a CLEAN brand (drop any placeholder sections/products) so the real
-      // researched B3 isn't polluted by pre-onboarding mock data.
-      if (draft.onboardingSource === "research") {
-        const clean = { ...draft, sections: [], products: [], personas: [], usps: [], competitors: [] };
-        const brand = await addBrand(clean);
-        toast.success(`${brand.name} created`, { description: "Let's build its Brand Intelligence." });
-        router.push("/onboarding");
-        return;
-      }
       const brand = await addBrand(draft);
       toast.success(`${brand.name} added`, { description: "Populated and ready across every system." });
       router.push("/dashboard");
@@ -85,7 +87,7 @@ export default function NewBrandPage() {
       />
 
       {stage === "choose" && <PathChooser onChoose={(p) => setStage(p)} />}
-      {stage === "research" && <ResearchFlow onComplete={toReview} />}
+      {stage === "research" && <ResearchFlow onComplete={createResearch} />}
       {stage === "paste" && <PasteFlow onComplete={toReview} />}
       {stage === "wizard" && <WizardFlow onComplete={toReview} />}
       {stage === "review" && draft && (

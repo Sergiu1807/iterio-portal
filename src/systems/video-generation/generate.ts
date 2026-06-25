@@ -4,6 +4,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
 import { signedUrl } from "@/lib/storage";
 import { submitVideoJob, videoModelId } from "@/lib/providers/video-provider";
+import { buildBrandGrounding, compactBrandContext } from "@/lib/brand-grounding";
 import { KIE_INPUT_EXPIRY, MAX_VARIATIONS } from "./constants";
 import {
   craftPromptAgent,
@@ -118,6 +119,9 @@ export async function runVideoBatch(batchId: string, opts: VideoGenOpts): Promis
     // so the stored label matches the template the pipeline really used.
     const mode = computeMode(opts.videoType, opts.arollStyle, hasProduct, hasCharacter);
 
+    // Brand grounding (B3-first, flat-fallback) → a compact voice/compliance block.
+    const brandContext = compactBrandContext(await buildBrandGrounding(opts.brandId));
+
     // ── universal prompt pipeline (Claude) ──
     const crafter = await craftPromptAgent({
       productName: product?.name ?? "",
@@ -128,6 +132,7 @@ export async function runVideoBatch(batchId: string, opts: VideoGenOpts): Promis
       hasProduct,
       characterNames: characters.map((c) => c.name),
       characterDescriptions: characters.map((c) => ({ name: c.name, description: c.description ?? "" })),
+      brandContext,
     });
     const studioFlow = await generateStudioFlowPrompt(crafter);
     const cleaned = await cleanPrompt(studioFlow);

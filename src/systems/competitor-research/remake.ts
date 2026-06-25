@@ -5,6 +5,7 @@ import { db, schema } from "@/lib/db";
 import { callClaude, toolResult, textOf } from "@/lib/providers/claude";
 import { callGemini } from "@/lib/providers/gemini";
 import { downloadFromStorage, signedUrl } from "@/lib/storage";
+import { buildBrandGrounding } from "@/lib/brand-grounding";
 
 const SYSTEM_KEY = "competitor-research";
 const MAX_INLINE_VIDEO = 14 * 1024 * 1024;
@@ -15,19 +16,10 @@ type Product = { name: string; keyBenefits: string | null };
 type Compliance = { pass: boolean; failures: string[] };
 
 async function brandIntel(brandId: string): Promise<{ name: string; category: string | null; voice: string }> {
-  const [b] = await db
-    .select({ name: schema.brands.name, category: schema.brands.category, vibe: schema.brands.vibe })
-    .from(schema.brands)
-    .where(eq(schema.brands.id, brandId))
-    .limit(1);
-  const sections = await db
-    .select({ title: schema.intelligenceSections.title, content: schema.intelligenceSections.content })
-    .from(schema.intelligenceSections)
-    .where(eq(schema.intelligenceSections.brandId, brandId))
-    .orderBy(asc(schema.intelligenceSections.sortOrder))
-    .limit(4);
-  const voice = [b?.vibe ? `Vibe: ${b.vibe}` : "", ...sections.map((s) => `${s.title}: ${(s.content ?? "").slice(0, 500)}`)].filter(Boolean).join("\n");
-  return { name: b?.name ?? "our brand", category: b?.category ?? null, voice };
+  // B3-first (rich voice/positioning/compliance), flat-fallback. Capped for the
+  // remake prompt's token budget (it also carries the competitor ad imagery).
+  const g = await buildBrandGrounding(brandId);
+  return { name: g.brandName, category: g.category ?? null, voice: g.text.slice(0, 4000) };
 }
 
 /** Auto-pick the product to feature: the hero, else the first, else none. */

@@ -745,3 +745,66 @@ export const brandIntelligence = pgTable(
     index("brand_intel_brand_status_idx").on(t.brandId, t.status),
   ]
 );
+
+// =============================================
+// IDEATION — Angle / Concept Generator (SOP Stage 1; first true B3 consumer).
+// A batch row is the queue item (claim → generate via Claude → write angles → finalize).
+// =============================================
+export const angleBatches = pgTable(
+  "angle_batches",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    brandId: uuid("brand_id").notNull().references(() => brands.id, { onDelete: "cascade" }),
+    productId: uuid("product_id").references(() => products.id, { onDelete: "set null" }),
+    objective: text("objective"), // free-text campaign objective
+    funnelStage: text("funnel_stage").notNull().default("TOF"), // TOF | MOF | BOF | any
+    formats: jsonb("formats").$type<string[]>().notNull().default([]), // static | carousel | video | any
+    count: integer("count").notNull().default(8),
+    theme: text("theme"), // optional seed/theme
+    seedAngleId: uuid("seed_angle_id"), // set for "regenerate-similar"
+    paramsJson: jsonb("params_json").$type<Record<string, unknown>>().notNull().default({}),
+    status: text("status").notNull().default("pending"), // pending | running | complete | failed
+    groundingSource: text("grounding_source"), // b3 | flat | none
+    b3Version: integer("b3_version"), // approved B3 version it grounded on (if b3)
+    attempts: integer("attempts").notNull().default(0),
+    maxAttempts: integer("max_attempts").notNull().default(3),
+    errorMessage: text("error_message"),
+    costCents: integer("cost_cents").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+  },
+  (t) => [
+    index("angle_batches_brand_status_idx").on(t.brandId, t.status),
+    index("angle_batches_status_idx").on(t.status),
+  ]
+);
+
+export const angles = pgTable(
+  "angles",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    batchId: uuid("batch_id").notNull().references(() => angleBatches.id, { onDelete: "cascade" }),
+    brandId: uuid("brand_id").notNull().references(() => brands.id, { onDelete: "cascade" }),
+    title: text("title").notNull(),
+    format: text("format"), // static | carousel | video
+    funnelStage: text("funnel_stage"),
+    bigIdea: text("big_idea"),
+    hook: text("hook"),
+    emotionalDriver: text("emotional_driver"),
+    targetPersona: text("target_persona"),
+    proofMechanism: text("proof_mechanism"),
+    complianceFlag: text("compliance_flag").notNull().default("safe"), // safe | risky | banned
+    ruleRef: text("rule_ref"), // which compliance rule/phrase it touches
+    sourceInspiration: text("source_inspiration"), // which winner/insight it draws on
+    differentiationNote: text("differentiation_note"),
+    score: numeric("score", { precision: 4, scale: 2 }), // relevance × novelty × brand-fit
+    status: text("status").notNull().default("draft"), // draft | shortlisted | approved | sent_to_brief
+    briefId: uuid("brief_id"), // handoff linkage to the (future) Brief Generator
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("angles_brand_status_idx").on(t.brandId, t.status),
+    index("angles_batch_idx").on(t.batchId),
+  ]
+);

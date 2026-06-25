@@ -152,6 +152,7 @@ export async function craftPromptAgent({
   characterNames = [],
   characterDescriptions = [],
   language,
+  brandContext,
 }: {
   productName: string;
   hasCharacter: boolean;
@@ -162,6 +163,7 @@ export async function craftPromptAgent({
   characterNames?: string[];
   characterDescriptions?: { name: string; description: string }[];
   language?: Language;
+  brandContext?: string;
 }): Promise<string> {
   // Determine the mode string for the agent
   let mode: string;
@@ -192,11 +194,14 @@ export async function craftPromptAgent({
     charSection = "CHARACTERS: none";
   }
 
+  const brandBlock = brandContext?.trim()
+    ? `\n\nBRAND CONTEXT (write in this brand's voice; honor its positioning; NEVER use the listed compliance phrasings):\n${brandContext.trim()}`
+    : "";
   const userMessage = `MODE: ${mode}
 PRODUCT: ${hasProduct && productName ? productName : "none"}
 HAS CHARACTER: ${hasCharacter ? "yes" : "no"}
 ${charSection}
-USER INPUT: ${script}`;
+USER INPUT: ${script}${brandBlock}`;
 
   const result = await callClaude({
     system: withLanguage(CRAFT_PROMPT_SYSTEM, language),

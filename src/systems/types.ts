@@ -2,7 +2,7 @@ import type { LucideIcon } from "lucide-react";
 import type { ComponentType } from "react";
 
 export type SystemStatus = "placeholder" | "live";
-export type NavGroup = "create" | "research" | "ops";
+export type NavGroup = "foundation" | "create" | "research" | "ops";
 
 /**
  * What a system needs to actually function. The dashboard reads this to show an
@@ -36,6 +36,7 @@ export interface SystemDefinition {
 }
 
 export const NAV_GROUP_LABELS: Record<NavGroup, string> = {
+  foundation: "Foundation",
   create: "Create",
   research: "Research",
   ops: "Operations",

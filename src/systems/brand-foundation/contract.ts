@@ -20,6 +20,18 @@ export async function getApprovedBrandIntelligence(brandId: string): Promise<B3 
   return (row?.json as B3 | undefined) ?? null;
 }
 
+/** Approved B3 + its version number (for systems that surface "grounding on vN"). */
+export async function getApprovedBrandIntelligenceMeta(brandId: string): Promise<{ b3: B3; version: number } | null> {
+  const [row] = await db
+    .select({ json: schema.brandIntelligence.json, version: schema.brandIntelligence.version })
+    .from(schema.brandIntelligence)
+    .where(and(eq(schema.brandIntelligence.brandId, brandId), eq(schema.brandIntelligence.status, "approved")))
+    .orderBy(desc(schema.brandIntelligence.version))
+    .limit(1);
+  if (!row?.json) return null;
+  return { b3: row.json as B3, version: row.version };
+}
+
 /** Latest version row (draft or approved) — used by the onboarding workspace. */
 export async function getLatestBrandIntelligence(brandId: string) {
   const [row] = await db

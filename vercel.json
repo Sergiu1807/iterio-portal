@@ -9,6 +9,7 @@
     { "path": "/api/cron/research-extract", "schedule": "*/2 * * * *" },
     { "path": "/api/cron/research-sweep", "schedule": "*/15 * * * *" },
     { "path": "/api/cron/static-generation", "schedule": "*/2 * * * *" },
-    { "path": "/api/cron/video-generation", "schedule": "*/2 * * * *" }
+    { "path": "/api/cron/video-generation", "schedule": "*/2 * * * *" },
+    { "path": "/api/cron/ideation", "schedule": "*/2 * * * *" }
   ]
 }

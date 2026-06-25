@@ -1,4 +1,6 @@
 import type { NavGroup, SystemDefinition } from "./types";
+import { brandFoundation } from "./brand-foundation";
+import { ideation } from "./ideation";
 import { briefGeneration } from "./brief-generation";
 import { staticGeneration } from "./static-generation";
 import { videoGeneration } from "./video-generation";
@@ -11,6 +13,8 @@ import { competitorResearch } from "./competitor-research";
  * refactor.
  */
 export const SYSTEMS: SystemDefinition[] = [
+  brandFoundation,
+  ideation,
   briefGeneration,
   staticGeneration,
   videoGeneration,
@@ -26,7 +30,7 @@ export function navSystems(): SystemDefinition[] {
 }
 
 export function systemsByGroup(): { group: NavGroup; systems: SystemDefinition[] }[] {
-  const groups: NavGroup[] = ["create", "research", "ops"];
+  const groups: NavGroup[] = ["foundation", "create", "research", "ops"];
   return groups
     .map((group) => ({ group, systems: navSystems().filter((s) => s.nav.group === group) }))
     .filter((g) => g.systems.length > 0);
