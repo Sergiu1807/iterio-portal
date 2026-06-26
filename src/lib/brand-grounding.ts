@@ -1,4 +1,6 @@
 import "server-only";
+import { eq } from "drizzle-orm";
+import { db, schema } from "@/lib/db";
 import { getApprovedBrandIntelligenceMeta } from "@/systems/brand-foundation/contract";
 import type { B3, B3ComplianceRule, B3Persona, B3WinnerPattern } from "@/systems/brand-foundation/b3-schema";
 import { getBrandById } from "@/lib/brands";
@@ -141,5 +143,58 @@ export async function buildBrandGrounding(brandId: string): Promise<BrandGroundi
     compliance: { rules: [], banned_phrasings: [], required_disclaimers: [] },
     personas,
     winnerPatterns: { own: [], competitor: [], category: [] },
+  };
+}
+
+/** The brand's on-brand creative inputs (for the Compliance/QA Gate's on-brand check):
+ *  palette/fonts/visual-do-dont from B3 creative_dna + storage keys from brand_assets,
+ *  flat-fallback to brands.palette/fonts + product image paths. */
+export type BrandCreativeAssets = {
+  source: "b3" | "flat" | "none";
+  palette: { hex: string; role?: string }[];
+  fonts: { display?: string; body?: string };
+  visualStyle?: string;
+  do: string[];
+  dont: string[];
+  logoKey: string | null;
+  productShotKeys: string[];
+  referenceKeys: string[]; // past winning creatives
+};
+
+export async function getBrandCreativeAssets(brandId: string): Promise<BrandCreativeAssets> {
+  const [meta, assets] = await Promise.all([
+    getApprovedBrandIntelligenceMeta(brandId),
+    db.select({ type: schema.brandAssets.type, key: schema.brandAssets.storageKey }).from(schema.brandAssets).where(eq(schema.brandAssets.brandId, brandId)),
+  ]);
+  const ofType = (t: string) => assets.filter((a) => a.type === t).map((a) => a.key).filter(Boolean);
+  const logoFromAssets = ofType("logo")[0] ?? null;
+  const productShots = ofType("product_photo");
+  const winners = ofType("winning_creative");
+
+  if (meta) {
+    const cd = meta.b3.creative_dna ?? {};
+    return {
+      source: "b3",
+      palette: cd.palette ?? [],
+      fonts: cd.fonts ?? {},
+      visualStyle: cd.visual_style,
+      do: cd.do ?? [],
+      dont: cd.dont ?? [],
+      logoKey: cd.logo_key ?? logoFromAssets,
+      productShotKeys: productShots.length ? productShots : (cd.reference_asset_keys ?? []),
+      referenceKeys: winners.length ? winners : (cd.reference_asset_keys ?? []),
+    };
+  }
+  const brand = await getBrandById(brandId);
+  if (!brand) return { source: "none", palette: [], fonts: {}, do: [], dont: [], logoKey: logoFromAssets, productShotKeys: productShots, referenceKeys: winners };
+  return {
+    source: "flat",
+    palette: brand.palette ?? [],
+    fonts: brand.fonts ?? {},
+    do: [],
+    dont: [],
+    logoKey: logoFromAssets,
+    productShotKeys: productShots.length ? productShots : (brand.products.map((p) => p.imageUrl).filter((k): k is string => !!k)),
+    referenceKeys: winners,
   };
 }

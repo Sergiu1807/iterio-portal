@@ -57,6 +57,8 @@ export function WinnerBoardTab({
   const [search, setSearch] = useState("");
   const [tierFilter, setTierFilter] = useState<Set<string>>(new Set());
   const [formatFilter, setFormatFilter] = useState<Set<string>>(new Set());
+  const [driverFilter, setDriverFilter] = useState<Set<string>>(new Set());
+  const [awarenessFilter, setAwarenessFilter] = useState<Set<string>>(new Set());
   const [sort, setSort] = useState<Sort>("score");
 
   const formatCounts = useMemo(() => {
@@ -71,6 +73,18 @@ export function WinnerBoardTab({
     return c;
   }, [concepts]);
 
+  const driverCounts = useMemo(() => {
+    const c: Record<string, number> = {};
+    for (const k of concepts) { const d = k.angleBank?.emotionalDriver; if (d) c[d] = (c[d] ?? 0) + 1; }
+    return c;
+  }, [concepts]);
+
+  const awarenessCounts = useMemo(() => {
+    const c: Record<string, number> = {};
+    for (const k of concepts) { const a = k.angleBank?.awarenessLevel; if (a) c[a] = (c[a] ?? 0) + 1; }
+    return c;
+  }, [concepts]);
+
   const filtered = useMemo(() => {
     let out = concepts;
     if (search.trim()) {
@@ -81,12 +95,14 @@ export function WinnerBoardTab({
     }
     if (tierFilter.size) out = out.filter((c) => c.tier && tierFilter.has(c.tier));
     if (formatFilter.size) out = out.filter((c) => c.formats.some((f) => formatFilter.has(f)));
+    if (driverFilter.size) out = out.filter((c) => c.angleBank?.emotionalDriver && driverFilter.has(c.angleBank.emotionalDriver));
+    if (awarenessFilter.size) out = out.filter((c) => c.angleBank?.awarenessLevel && awarenessFilter.has(c.angleBank.awarenessLevel));
     const arr = [...out];
     if (sort === "variants") arr.sort((a, b) => b.activeVariantCount - a.activeVariantCount);
     else if (sort === "recency") arr.sort((a, b) => b.activeDays - a.activeDays);
     else arr.sort((a, b) => b.winnerScore - a.winnerScore);
     return arr;
-  }, [concepts, search, tierFilter, formatFilter, sort]);
+  }, [concepts, search, tierFilter, formatFilter, driverFilter, awarenessFilter, sort]);
 
   const toggle = (set: Set<string>, setter: (s: Set<string>) => void, v: string) => {
     const next = new Set(set);
@@ -193,6 +209,26 @@ export function WinnerBoardTab({
             </button>
           ))}
         </div>
+        {Object.keys(driverCounts).length > 0 && (
+          <div className="flex flex-wrap gap-1.5">
+            {Object.keys(driverCounts).map((d) => (
+              <button key={d} onClick={() => toggle(driverFilter, setDriverFilter, d)}
+                className={cn("inline-flex items-center gap-1 rounded-full border px-3 py-1 text-xs font-medium transition-colors", driverFilter.has(d) ? "border-primary bg-primary/12 text-primary" : "border-border text-muted-foreground hover:bg-muted")}>
+                {titleCase(d)} ({driverCounts[d]})
+              </button>
+            ))}
+          </div>
+        )}
+        {Object.keys(awarenessCounts).length > 0 && (
+          <div className="flex flex-wrap gap-1.5">
+            {Object.keys(awarenessCounts).map((a) => (
+              <button key={a} onClick={() => toggle(awarenessFilter, setAwarenessFilter, a)}
+                className={cn("inline-flex items-center gap-1 rounded-full border px-3 py-1 text-xs font-medium transition-colors", awarenessFilter.has(a) ? "border-primary bg-primary/12 text-primary" : "border-border text-muted-foreground hover:bg-muted")}>
+                {titleCase(a)}-aware ({awarenessCounts[a]})
+              </button>
+            ))}
+          </div>
+        )}
         <select
           value={sort}
           onChange={(e) => setSort(e.target.value as Sort)}
@@ -214,6 +250,8 @@ export function WinnerBoardTab({
               setSearch("");
               setTierFilter(new Set());
               setFormatFilter(new Set());
+              setDriverFilter(new Set());
+              setAwarenessFilter(new Set());
             }}
             className="underline"
           >

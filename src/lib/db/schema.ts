@@ -900,3 +900,41 @@ export const adCopy = pgTable(
     index("ad_copy_batch_idx").on(t.batchId),
   ]
 );
+
+// =============================================
+// COMPLIANCE + QA GATE (SOP Stage 4 — THE MOAT). One review row per creative gated:
+// AI scores a 6-criterion scorecard (Claude claim-safety + Gemini Vision) → pass/fail,
+// human can override. The row IS the queue item (claim → score → guarded finalize → sweep).
+// =============================================
+export const gateReviews = pgTable(
+  "gate_reviews",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    brandId: uuid("brand_id").notNull().references(() => brands.id, { onDelete: "cascade" }),
+    sourceSystem: text("source_system").notNull().default("static"), // static | video | external
+    sourceId: uuid("source_id"), // the generation row gated (null for ad-hoc/external)
+    assetPath: text("asset_path"), // storage key OR external https url of the image/poster
+    copyText: text("copy_text"), // the on-feed / on-image copy claim-checked
+    status: text("status").notNull().default("pending"), // pending | running | complete | failed
+    overallPass: boolean("overall_pass"),
+    criteriaJson: jsonb("criteria_json").$type<{ key: string; label: string; score: number; pass: boolean; note: string }[]>().notNull().default([]),
+    complianceInherited: jsonb("compliance_inherited").$type<{ flag: string; ruleRef?: string | null; notes: string[] }>(),
+    reviewer: text("reviewer").notNull().default("ai"), // ai | human
+    overridden: boolean("overridden").notNull().default(false),
+    groundingSource: text("grounding_source"),
+    b3Version: integer("b3_version"),
+    notes: text("notes"),
+    attempts: integer("attempts").notNull().default(0),
+    maxAttempts: integer("max_attempts").notNull().default(3),
+    errorMessage: text("error_message"),
+    costCents: integer("cost_cents").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+  },
+  (t) => [
+    index("gate_reviews_brand_status_idx").on(t.brandId, t.status),
+    index("gate_reviews_source_idx").on(t.sourceId),
+    index("gate_reviews_status_idx").on(t.status),
+  ]
+);

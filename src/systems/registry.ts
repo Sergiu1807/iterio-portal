@@ -6,6 +6,7 @@ import { adCopy } from "./ad-copy";
 import { staticGeneration } from "./static-generation";
 import { videoGeneration } from "./video-generation";
 import { competitorResearch } from "./competitor-research";
+import { gateReview } from "./gate-review";
 
 /**
  * Single source of truth. The sidebar, dashboard, command palette and the
@@ -21,6 +22,7 @@ export const SYSTEMS: SystemDefinition[] = [
   staticGeneration,
   videoGeneration,
   competitorResearch,
+  gateReview,
 ];
 
 export function getSystem(key: string): SystemDefinition | null {

@@ -8,6 +8,7 @@ import { SECTION_BLUEPRINT } from "@/lib/onboarding/draft";
 import { buildPlaceholderConfig } from "./placeholder-prompts";
 import { SYSTEM_KEY } from "./constants";
 import { brandDna, needsFill, INTEL_TOOL, INTEL_SYSTEM } from "./authoring";
+import { buildBrandGrounding } from "@/lib/brand-grounding";
 import { researchBrandDna, studyProducts, inferBrandType } from "./research";
 import { renderAgent1, renderAgent2, renderBriefAgent1, renderBriefAgent2, buildColorSubstitutions, buildCatalog, buildVoiceRules } from "./templates";
 import type { Brand } from "@/lib/types";
@@ -44,13 +45,21 @@ async function enrichIntel(brand: Brand, siteText: string | null): Promise<void>
   });
   if (targets.length === 0) return;
 
+  // B3-first grounding context (carries positioning/voice/compliance) → flat fallback.
+  // Additive context only — the FIXED static agent prompt templates are untouched.
+  const grounding = await buildBrandGrounding(brand.id);
+  const ctx =
+    grounding.source === "b3"
+      ? `${grounding.text}${siteText ? `\n\nWEBSITE RESEARCH (excerpt):\n${siteText.slice(0, 4000)}` : ""}`
+      : brandDna(brand, siteText);
+
   const wanted = targets.map((t) => `- ${t.sectionType} (${t.title})`).join("\n");
   const resp = await callClaude({
     system: INTEL_SYSTEM,
     messages: [
       {
         role: "user",
-        content: `${brandDna(brand, siteText)}\n\nFILL THESE SECTION TYPES (return one entry per type, using the exact sectionType id):\n${wanted}`,
+        content: `${ctx}\n\nFILL THESE SECTION TYPES (return one entry per type, using the exact sectionType id):\n${wanted}`,
       },
     ],
     maxTokens: 4000,

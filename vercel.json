@@ -12,6 +12,7 @@
     { "path": "/api/cron/video-generation", "schedule": "*/2 * * * *" },
     { "path": "/api/cron/ideation", "schedule": "*/2 * * * *" },
     { "path": "/api/cron/brief-generation", "schedule": "*/2 * * * *" },
-    { "path": "/api/cron/ad-copy", "schedule": "*/2 * * * *" }
+    { "path": "/api/cron/ad-copy", "schedule": "*/2 * * * *" },
+    { "path": "/api/cron/gate-review", "schedule": "*/2 * * * *" }
   ]
 }

@@ -6,7 +6,7 @@
 export type Weights = { longevity: number; scaling: number; reachVel: number; spread: number };
 
 export const WEIGHTS: Weights = { longevity: 0.3, scaling: 0.35, reachVel: 0.2, spread: 0.1 };
-export const RELAUNCH_BONUS = 0.1;
+export const RELAUNCH_BONUS = 0.05; // spec: resurrection bonus = +0.05
 export const NICHE_BENCHMARK = 50_000; // EU reach/day baseline; unused in v1 (reach null)
 
 // Tunable tier thresholds. Highest-priority match wins (see assignTier).
